@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from 'react';
 import CytoscapeComponent from 'react-cytoscapejs';
 
 const GraphView = () => {
-  const [elements, setElements] = useState([
+  const elements = [
     { data: { id: 'person1', label: 'Rajesh Kumar', type: 'PERSON' } },
     { data: { id: 'phone1', label: '9876543210', type: 'PHONE' } },
     { data: { id: 'vehicle1', label: 'WB12AB1234', type: 'VEHICLE' } },
@@ -13,7 +12,7 @@ const GraphView = () => {
     { data: { source: 'person1', target: 'vehicle1', relationship: 'DRIVES' } },
     { data: { source: 'person1', target: 'case1', relationship: 'SUSPECT' } },
     { data: { source: 'vehicle1', target: 'case2', relationship: 'EVIDENCE' } },
-  ]);
+  ];
 
   const stylesheet = [
     {

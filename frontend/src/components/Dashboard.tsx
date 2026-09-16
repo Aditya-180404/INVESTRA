@@ -1,4 +1,3 @@
-import React from 'react';
 import { AlertTriangle, FileText, Users, Network, TrendingUp } from 'lucide-react';
 
 const Dashboard = () => {
