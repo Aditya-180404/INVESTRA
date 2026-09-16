@@ -15,6 +15,9 @@ class StationRecommendation(Base):
     priority = Column(String, nullable=False)
     reasons_json = Column(Text, nullable=False)
     selected = Column(Boolean, default=False, nullable=False)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    distance_km = Column(Float, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
+from app.api.auth import get_current_user
 from pydantic import BaseModel
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 class QueryRequest(BaseModel):
     query: str

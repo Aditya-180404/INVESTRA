@@ -13,5 +13,26 @@ services:
       - postgres_data:/var/lib/postgresql/data
     restart: always
 
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://investra_user:investra_password@db:5432/investra_db
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_started
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
 volumes:
   postgres_data:

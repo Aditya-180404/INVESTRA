@@ -43,6 +43,7 @@ htmlcov/
 # Virtual Environments
 venv/
 .venv/
+.venv-*/
 env/
 ENV/
 backend/venv/
@@ -53,6 +54,11 @@ backend/venv/
 *.sqlite3
 backend/*.db
 investra.db
+backend/pgdata/
+
+# Local runtime files
+*.pid
+.pytest_cache/
 
 # Node & Frontend
 node_modules/
@@ -77,3 +83,6 @@ frontend/dist-ssr/
 # Logs
 logs/
 *.log
+
+# Local environment overrides
+.envrc

@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
+from app.api.auth import get_current_user
 from app.services.graph import build_case_graph
 from app.models.evidence import Evidence
 from typing import List, Dict
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 @router.get("/{case_id}/graph")
 def get_case_graph(case_id: int, db: Session = Depends(get_db)):

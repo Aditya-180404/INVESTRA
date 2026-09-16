@@ -1,40 +1,60 @@
-nstallation
+# INVESTRA
 
-1. Clone the repository:
+INVESTRA is a FastAPI and React investigation-coordination application. The
+frontend is in `frontend/` and the API is in `backend/`.
 
+## Prerequisites
 
+- Docker and Docker Compose for the recommended setup
+- Python 3.12+ and Node.js for local development
 
-bash
+## Run with Docker Compose
 
+From the repository root, run:
 
-git clone https://github.com/yourusername/INVESTRA.git
-cd INVESTRA
-Build and run with Docker Compose
+```bash
+docker compose up --build
+```
 
+This starts PostgreSQL, the FastAPI backend, and the Vite frontend. Open:
 
-bash
+- Application: http://localhost:5173
+- API: http://localhost:8000/
+- Interactive API documentation: http://localhost:8000/docs
 
+The backend uses the PostgreSQL `db` service and the `DATABASE_URL` configured
+in `docker-compose.yml`. To stop the stack, press `Ctrl+C` or run:
 
-docker-compose up --build
-The application will start on port 8501.
+```bash
+docker compose down
+```
 
-2. Usage
+## Run locally
 
-After starting the application, open your web browser and navigate to http://localhost:8501.
+Create the backend environment and install its dependencies:
 
-3. Available Commands
+```bash
+cd backend
+python -m venv .venv
+.venv/bin/pip install -r requirements.txt
+```
 
-Command Description
+Start the API in the first terminal:
 
-docker-compose up
-Start the application in detached mode.
+```bash
+cd backend
+.venv/bin/uvicorn app.main:app --reload
+```
 
-docker-compose up --build
-Rebuild and start the application.
+Install the frontend dependencies and start Vite in a second terminal:
 
-docker-compose down
-Stop and remove the containers.
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-4. Environment Variables
-
-No environment variables are required for basic usage.
+The local API is available at http://localhost:8000/ and the frontend at
+http://localhost:5173. Local development uses `backend/investra.db` (SQLite) by
+default. To use PostgreSQL locally, set `DATABASE_URL` to a PostgreSQL
+connection string before starting the backend.

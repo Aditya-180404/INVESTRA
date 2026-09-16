@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import cases, auth, documents, intelligence, assistant, coordination
-from app.core.database import Base, engine
+from app.core.database import Base, engine, migrate_sqlite_schema
 from app.models import case, entity, evidence, relationship, user, coordination as coordination_models
 
 app = FastAPI(
@@ -29,6 +29,7 @@ app.include_router(coordination.router, prefix="/api/coordination", tags=["coord
 
 @app.on_event("startup")
 def create_tables():
+    migrate_sqlite_schema()
     Base.metadata.create_all(bind=engine)
 
 @app.get("/")
