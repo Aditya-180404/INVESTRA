@@ -19,6 +19,8 @@ class User(Base):
     full_name = Column(String, nullable=True)
     rank = Column(String, default="Investigating Officer")
     station_name = Column(String, default="Salt Lake Police Station")
+    station_id = Column(Integer, nullable=True) # Foreign key / link to PoliceStation
+    phone = Column(String, nullable=True)
     hashed_password = Column(String, nullable=False)
     role = Column(Enum(RoleEnum), default=RoleEnum.OFFICER)
     is_active = Column(Boolean, default=True)

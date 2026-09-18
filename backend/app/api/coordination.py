@@ -15,9 +15,12 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.api.auth import get_current_user
+from app.core.security import require_case_access
 from app.models.case import Case
 from app.models.coordination import AuditLog, InformationRequest, StationRecommendation, StationResponse
 from app.models.entity import Entity
+from app.models.case_member import CaseMember
+from app.models.user import User, RoleEnum
 from app.models.evidence import Evidence
 from app.services.extraction import extract_entities
 
@@ -96,7 +99,6 @@ class DraftRequest(BaseModel):
 
 class EvidenceText(BaseModel):
     text: str = Field(min_length=5, max_length=10000)
-    officer_badge: Optional[str] = "WB-IPS-4920"
 
 
 class ResponseInput(BaseModel):
@@ -188,11 +190,11 @@ def get_case_or_404(db: Session, case_id: int):
 
 
 @router.post("/bootstrap")
-def bootstrap(db: Session = Depends(get_db)):
+def bootstrap(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """
     Returns the first available active case or bootstraps the demo case.
     """
-    case = db.query(Case).order_by(Case.id.asc()).first()
+    case = db.query(Case).order_by(Case.id.asc()).first() if user.role == RoleEnum.ADMIN else db.query(Case).join(CaseMember).filter(CaseMember.user_id == user.id).order_by(Case.id.asc()).first()
     if not case:
         case = Case(
             case_number="FIR-2026-104",
@@ -204,10 +206,11 @@ def bootstrap(db: Session = Depends(get_db)):
             latitude=22.5804,
             longitude=88.4282,
             status="UNDER_INVESTIGATION",
-            created_by_officer="Inspector Arjun Das"
+            created_by_officer=user.full_name or user.username, assigned_officer_id=user.id
         )
         db.add(case)
         db.flush()
+        db.add(CaseMember(case_id=case.id, user_id=user.id, permission="OWNER"))
         add_recommendations(db, case)
         audit(db, case.id, "CASE_CREATED", "Default investigation case bootstrapped into PostgreSQL.")
         db.commit()
@@ -241,8 +244,9 @@ def create_coordination_case(payload: CaseInput, db: Session = Depends(get_db)):
 
 
 @router.get("/cases/{case_id}/workspace")
-def workspace(case_id: int, db: Session = Depends(get_db)):
+def workspace(case_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     case = get_case_or_404(db, case_id)
+    require_case_access(case_id, db, user)
     recommendations = db.query(StationRecommendation).filter(StationRecommendation.case_id == case_id).order_by(StationRecommendation.score.desc()).all()
     requests = db.query(InformationRequest).filter(InformationRequest.case_id == case_id).order_by(InformationRequest.id.desc()).all()
     responses = {response.request_id: response for response in db.query(StationResponse).join(InformationRequest).filter(InformationRequest.case_id == case_id).all()}
@@ -273,8 +277,9 @@ def workspace(case_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/cases/{case_id}/evidence")
-def add_evidence(case_id: int, payload: EvidenceText, db: Session = Depends(get_db)):
+def add_evidence(case_id: int, payload: EvidenceText, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     case = get_case_or_404(db, case_id)
+    require_case_access(case_id, db, user, write=True)
     extracted = extract_entities(payload.text)
     if not extracted:
         extracted = [{"type": "NOTE", "value": payload.text[:110], "confidence": 0.5}]
@@ -283,14 +288,15 @@ def add_evidence(case_id: int, payload: EvidenceText, db: Session = Depends(get_
         exists = db.query(Entity).filter(Entity.case_id == case.id, Entity.entity_type == entry["type"], Entity.value == value).first()
         if not exists:
             db.add(Entity(case_id=case.id, entity_type=entry["type"], value=value, normalized_value=entry.get("normalized_value", value.upper()), confidence_score=entry.get("confidence", 0.7)))
-    audit(db, case.id, "EVIDENCE_NOTE_ADDED", f"Evidence text processed; {len(extracted)} entities extracted.", payload.officer_badge or "Investigator")
+    audit(db, case.id, "EVIDENCE_NOTE_ADDED", f"Evidence text processed; {len(extracted)} entities extracted.", user.full_name or user.username)
     db.commit()
     return {"message": "Evidence processed", "entities_extracted": len(extracted)}
 
 
 @router.post("/cases/{case_id}/analysis")
-def run_station_analysis(case_id: int, db: Session = Depends(get_db)):
+def run_station_analysis(case_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     case = get_case_or_404(db, case_id)
+    require_case_access(case_id, db, user, write=True)
     recommendations = db.query(StationRecommendation).filter(StationRecommendation.case_id == case_id).all()
     if not recommendations:
         add_recommendations(db, case)
@@ -300,10 +306,11 @@ def run_station_analysis(case_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/recommendations/{recommendation_id}")
-def update_selection(recommendation_id: int, payload: SelectionUpdate, db: Session = Depends(get_db)):
+def update_selection(recommendation_id: int, payload: SelectionUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     item = db.query(StationRecommendation).filter(StationRecommendation.id == recommendation_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Recommendation not found")
+    require_case_access(item.case_id, db, user, write=True)
     item.selected = payload.selected
     audit(db, item.case_id, "STATION_SELECTION_UPDATED", f"{item.station_name} {'selected' if payload.selected else 'deselected'} for coordination.")
     db.commit()
@@ -312,8 +319,9 @@ def update_selection(recommendation_id: int, payload: SelectionUpdate, db: Sessi
 
 
 @router.post("/cases/{case_id}/requests/drafts")
-def create_drafts(case_id: int, payload: DraftRequest, db: Session = Depends(get_db)):
+def create_drafts(case_id: int, payload: DraftRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     case = get_case_or_404(db, case_id)
+    require_case_access(case_id, db, user, write=True)
     stations = db.query(StationRecommendation).filter(StationRecommendation.case_id == case_id, StationRecommendation.id.in_(payload.station_ids)).all()
     if len(stations) != len(set(payload.station_ids)):
         raise HTTPException(status_code=400, detail="One or more selected stations do not belong to this case")
@@ -352,10 +360,11 @@ def create_drafts(case_id: int, payload: DraftRequest, db: Session = Depends(get
 
 
 @router.post("/requests/{request_id}/approve")
-def approve_request(request_id: int, db: Session = Depends(get_db)):
+def approve_request(request_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     item = db.query(InformationRequest).filter(InformationRequest.id == request_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Request not found")
+    require_case_access(item.case_id, db, user, write=True)
     if item.status == "RESPONDED":
         raise HTTPException(status_code=400, detail="A completed request cannot be sent again")
     item.status = "SENT"
@@ -367,10 +376,11 @@ def approve_request(request_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/requests/{request_id}/responses")
-def ingest_response(request_id: int, payload: ResponseInput, db: Session = Depends(get_db)):
+def ingest_response(request_id: int, payload: ResponseInput, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     item = db.query(InformationRequest).filter(InformationRequest.id == request_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Request not found")
+    require_case_access(item.case_id, db, user, write=True)
     lower = payload.text.lower()
     result = "MATCH_FOUND" if any(word in lower for word in ("match", "found", "appears", "yes", "verified", "identified")) else "NO_MATCH"
     prior = db.query(StationResponse).filter(StationResponse.request_id == item.id).first()
@@ -387,8 +397,9 @@ def ingest_response(request_id: int, payload: ResponseInput, db: Session = Depen
 
 
 @router.get("/cases/{case_id}/report")
-def report(case_id: int, db: Session = Depends(get_db)):
+def report(case_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     case = get_case_or_404(db, case_id)
+    require_case_access(case_id, db, user)
     requests = db.query(InformationRequest).filter(InformationRequest.case_id == case_id).all()
     responses = {item.request_id: item for item in db.query(StationResponse).join(InformationRequest).filter(InformationRequest.case_id == case_id).all()}
     rows, findings, sources, pending = [], [], [], 0
@@ -428,8 +439,9 @@ def report(case_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/cases/{case_id}/report/verify")
-def verify_report(case_id: int, db: Session = Depends(get_db)):
+def verify_report(case_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     get_case_or_404(db, case_id)
+    require_case_access(case_id, db, user, write=True)
     audit(db, case_id, "REPORT_VERIFIED", "Investigating officer verified all cited source records.")
     db.commit()
     return {"message": "Report marked as verified by investigating officer"}

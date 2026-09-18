@@ -1,0 +1,1 @@
+Synthetic training reference: information requests should progress through DRAFT, SUBMITTED, RECEIVED, IN_PROGRESS, RESPONDED, UNDER_REVIEW, APPROVED, REJECTED, and CLOSED. A human reviewer must assess source records before operational use.

@@ -1,34 +1,43 @@
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 from app.api.auth import get_current_user
-from pydantic import BaseModel
+from app.core.database import get_db
+from app.core.security import audit, require_case_access
+from app.models.user import User
+from app.services.rag import answer
 
-router = APIRouter(dependencies=[Depends(get_current_user)])
+router = APIRouter()
 
 class QueryRequest(BaseModel):
-    query: str
-    case_id: int
+    query: Optional[str] = None
+    message: Optional[str] = None
+    case_id: Optional[int] = None
 
 @router.post("/ask")
-def ask_assistant(request: QueryRequest):
-    """
-    Mock RAG / Local LLM query endpoint.
-    In production, this would search pgvector and pass context to a local LLM.
-    """
-    query = request.query.lower()
+@router.post("/chat")
+def ask_assistant(request: QueryRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    user_query = (request.query or request.message or "").strip()
+    if not user_query:
+        raise HTTPException(status_code=422, detail="Query or message field is required")
+
+    if request.case_id and request.case_id > 0:
+        require_case_access(request.case_id, db, user)
+
+    try:
+        result = answer(db, request.case_id, user_query)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="AI service unavailable. Core investigation functions remain available.") from exc
     
-    # Mock responses based on keywords
-    if "related" in query or "connection" in query:
-        response = "Based on the extracted evidence, FIR-104 and FIR-219 are potentially related because they share a common entity: Vehicle WB12AB1234, which is registered to Rajesh Kumar. (Confidence: High)"
-        sources = ["Evidence-42: Vehicle Registration", "Evidence-102: CCTV Metadata"]
-    elif "contradiction" in query:
-        response = "There is a potential contradiction in the timeline. The witness statement (Evidence-5) places the suspect at Location X at 20:00, but CCTV metadata (Evidence-12) places a matching person at Location Y at 20:05."
-        sources = ["Evidence-5: Witness Statement", "Evidence-12: CCTV Metadata"]
-    else:
-        response = "I have analyzed the case files. Please specify if you are looking for entity relationships, timeline contradictions, or missing evidence."
-        sources = []
-        
+    audit(db, action="AI_ANALYSIS", actor=user, case_id=request.case_id if request.case_id and request.case_id > 0 else None,
+          detail=f"RAG query: {user_query[:100]}")
+    db.commit()
+
     return {
-        "answer": response,
-        "sources": sources,
-        "warning": "AI-generated insight. Requires human verification."
+        "response": result.get("answer", ""),
+        "answer": result.get("answer", ""),
+        "sources": result.get("sources", []),
+        **result
     }
+

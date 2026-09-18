@@ -31,6 +31,13 @@ docker compose down
 
 ## Run locally
 
+Copy `.env.example` to `.env`, replace all placeholder credentials, and pull the local AI models:
+
+```bash
+ollama pull qwen3.5:0.8b
+ollama pull nomic-embed-text
+```
+
 Create the backend environment and install its dependencies:
 
 ```bash
@@ -43,6 +50,8 @@ Start the API in the first terminal:
 
 ```bash
 cd backend
+.venv/bin/alembic -c alembic.ini upgrade head
+.venv/bin/python bootstrap_admin.py
 .venv/bin/uvicorn app.main:app --reload
 ```
 
@@ -55,6 +64,8 @@ npm run dev
 ```
 
 The local API is available at http://localhost:8000/ and the frontend at
-http://localhost:5173. Local development uses `backend/investra.db` (SQLite) by
-default. To use PostgreSQL locally, set `DATABASE_URL` to a PostgreSQL
-connection string before starting the backend.
+http://localhost:5173. The backend requires `JWT_SECRET`; migrations are
+required before startup. Docker mounts evidence storage separately from the
+database and creates the initial administrator only from `BOOTSTRAP_ADMIN_*`
+environment variables. Ollama is optional for core case workflows: the RAG API
+returns a clear 503 while Ollama is unavailable.

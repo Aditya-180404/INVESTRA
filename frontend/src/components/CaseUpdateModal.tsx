@@ -58,7 +58,6 @@ export default function CaseUpdateModal({
         const formData = new FormData();
         formData.append('file', additionalFile);
         formData.append('case_id', String(caseData.id));
-        formData.append('officer_badge', 'WB-IPS-4920');
 
         const uploadRes = await fetch(`${apiBase}/documents/upload`, {
           method: 'POST',

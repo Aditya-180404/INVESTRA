@@ -1,0 +1,1 @@
+Synthetic training reference: preserve the original evidence file, record its SHA-256 checksum, restrict access to authorized case members, and retain a traceable audit record for upload and download events.

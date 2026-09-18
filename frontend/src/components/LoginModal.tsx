@@ -16,8 +16,8 @@ interface LoginModalProps {
 }
 
 export default function LoginModal({ apiBase, onLoginSuccess, onClose }: LoginModalProps) {
-  const [identifier, setIdentifier] = useState('WB-IPS-4920');
-  const [password, setPassword] = useState('Officer@1234');
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -123,33 +123,7 @@ export default function LoginModal({ apiBase, onLoginSuccess, onClose }: LoginMo
           </button>
         </form>
 
-        {/* Quick Demo Sign In Shortcuts */}
-        <div className="border-t border-slate-800 pt-4">
-          <p className="text-[11px] text-slate-400 mb-2 font-medium">Quick Demo Profiles (Stored in PostgreSQL):</p>
-          <div className="space-y-2">
-            <button
-              onClick={() => handleLogin('WB-IPS-4920', 'Officer@1234')}
-              className="w-full text-left p-2 rounded-lg bg-slate-950/60 hover:bg-slate-800/80 border border-slate-800 flex items-center justify-between text-xs transition"
-            >
-              <div>
-                <span className="text-white font-medium block">Inspector Arjun Das</span>
-                <span className="text-slate-500 font-mono text-[10px]">WB-IPS-4920 · Salt Lake PS</span>
-              </div>
-              <span className="text-blue-400 text-[11px]">Sign In &rarr;</span>
-            </button>
-
-            <button
-              onClick={() => handleLogin('WB-SI-3811', 'Officer@1234')}
-              className="w-full text-left p-2 rounded-lg bg-slate-950/60 hover:bg-slate-800/80 border border-slate-800 flex items-center justify-between text-xs transition"
-            >
-              <div>
-                <span className="text-white font-medium block">Sub-Inspector Ritu Dewan</span>
-                <span className="text-slate-500 font-mono text-[10px]">WB-SI-3811 · Bidhannagar East PS</span>
-              </div>
-              <span className="text-blue-400 text-[11px]">Sign In &rarr;</span>
-            </button>
-          </div>
-        </div>
+        <p className="border-t border-slate-800 pt-4 text-[11px] text-slate-500">Use your department-issued username, official email address, or badge ID. Access is logged and role controlled.</p>
       </div>
     </div>
   );

@@ -64,7 +64,6 @@ export default function NewCaseIntake({ apiBase, onCaseCreated, onNotice }: NewC
           latitude: latitude,
           longitude: longitude,
           status: 'OPEN',
-          created_by_officer: 'Inspector Arjun Das'
         })
       });
 
@@ -81,7 +80,6 @@ export default function NewCaseIntake({ apiBase, onCaseCreated, onNotice }: NewC
           const formData = new FormData();
           formData.append('file', file);
           formData.append('case_id', String(createdCase.id));
-          formData.append('officer_badge', 'WB-IPS-4920');
 
           const uploadRes = await fetch(`${apiBase}/documents/upload`, {
             method: 'POST',
@@ -211,7 +209,7 @@ export default function NewCaseIntake({ apiBase, onCaseCreated, onNotice }: NewC
                 <input
                   type="file"
                   multiple
-                  accept=".pdf,.txt,.csv,.log,.doc"
+                  accept=".pdf,.txt,.docx"
                   onChange={handleFileChange}
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 />

@@ -1,490 +1,1108 @@
-import { useState, useEffect } from 'react';
-import { Key, UserPlus, Users, CheckCircle, Lock, Unlock, RefreshCw, BadgeAlert } from 'lucide-react';
-
-interface Officer {
-  id: number;
-  username: string;
-  email: string;
-  badge_number?: string;
-  full_name?: string;
-  rank?: string;
-  station_name?: string;
-  role: string;
-  is_active: boolean;
-  created_at?: string;
-}
+import React, { useState, useEffect } from 'react';
+import {
+  Shield, Users, Building2, FolderKanban, Database,
+  ScrollText, Activity, LogOut, Search, Plus, CheckCircle2, XCircle,
+  AlertTriangle, RefreshCw, KeyRound, Trash2,
+  UploadCloud, Eye
+} from 'lucide-react';
+import { api } from '../services/api';
+import type { AdminStats, PoliceStation, User, AuditLogItem } from '../types';
 
 interface AdminPortalProps {
-  apiBase: string;
-  onNotice: (msg: string) => void;
+  currentTab?: string;
+  onNavigate: (path: string) => void;
+  onLogout: () => void;
+  currentUser: User;
 }
 
-const DEFAULT_URL_ENCODED_KEY = "%49%4e%56%45%53%54%52%41%5f%41%44%4d%49%4e%5f%32%30%32%36";
+export const AdminPortal: React.FC<AdminPortalProps> = ({
+  currentTab = 'dashboard',
+  onNavigate,
+  onLogout,
+  currentUser
+}) => {
+  const [activeTab, setActiveTab] = useState(currentTab);
+  const [stats, setStats] = useState<AdminStats | null>(null);
+  const [officers, setOfficers] = useState<User[]>([]);
+  const [stations, setStations] = useState<PoliceStation[]>([]);
+  const [cases, setCases] = useState<any[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
+  const [ragDocs, setRagDocs] = useState<any[]>([]);
+  const [datasetSummary, setDatasetSummary] = useState<any>(null);
+  const [health, setHealth] = useState<any>(null);
 
-export default function AdminPortal({ apiBase, onNotice }: AdminPortalProps) {
-  // Read token from window location or local state
-  const [tokenInput, setTokenInput] = useState('');
-  const [activeKey, setActiveKey] = useState<string>(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get('admin_key') || localStorage.getItem('investra_admin_key') || '';
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+
+  // Search/Filter states
+  const [officerSearch, setOfficerSearch] = useState('');
+  const [officerStatusFilter, setOfficerStatusFilter] = useState('');
+  const [stationSearch, setStationSearch] = useState('');
+  const [caseSearch, setCaseSearch] = useState('');
+  const [auditSearch, setAuditSearch] = useState('');
+
+  // Modals
+  const [showCreateOfficerModal, setShowCreateOfficerModal] = useState(false);
+  const [showCreateStationModal, setShowCreateStationModal] = useState(false);
+  const [showResetPwModal, setShowResetPwModal] = useState<User | null>(null);
+  const [showAssignOfficerModal, setShowAssignOfficerModal] = useState<any | null>(null);
+
+  // Forms
+  const [newOfficerForm, setNewOfficerForm] = useState({
+    full_name: '',
+    badge_number: '',
+    username: '',
+    email: '',
+    phone: '',
+    rank: 'Inspector',
+    station_id: undefined as number | undefined,
+    password: '',
+    status: 'ACTIVE'
   });
-  const [isAuthorized, setIsAuthorized] = useState(false);
-  const [verifying, setVerifying] = useState(false);
-  const [officers, setOfficers] = useState<Officer[]>([]);
-  const [loadingOfficers, setLoadingOfficers] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
 
-  // Form state for new officer
-  const [newBadge, setNewBadge] = useState('');
-  const [newName, setNewName] = useState('');
-  const [newRank, setNewRank] = useState('Inspector of Police');
-  const [newStation, setNewStation] = useState('Salt Lake Police Station');
-  const [newEmail, setNewEmail] = useState('');
-  const [newUsername, setNewUsername] = useState('');
-  const [newPassword, setNewPassword] = useState('Officer@1234');
-  const [submitting, setSubmitting] = useState(false);
+  const [newStationForm, setNewStationForm] = useState({
+    name: '',
+    code: '',
+    district: 'Kolkata South',
+    state: 'West Bengal',
+    address: '',
+    latitude: 22.5726,
+    longitude: 88.3639,
+    contact: '+91 33 2200 0000',
+    jurisdiction: 'Sector Jurisdiction',
+    status: 'ACTIVE'
+  });
 
-  // Validate admin token via backend URL encoding verification
-  const verifyToken = async (keyToTest: string) => {
-    if (!keyToTest.trim()) {
-      setIsAuthorized(false);
-      return;
-    }
-    setVerifying(true);
-    setErrorMsg('');
-    try {
-      const res = await fetch(`${apiBase}/auth/admin/verify?admin_key=${encodeURIComponent(keyToTest.trim())}`);
-      const data = await res.json();
-      if (data.valid) {
-        setIsAuthorized(true);
-        setActiveKey(keyToTest.trim());
-        localStorage.setItem('investra_admin_key', keyToTest.trim());
-        onNotice('Administrator Gateway unlocked via URL-encoded authorization.');
-        fetchOfficers(keyToTest.trim());
-      } else {
-        setIsAuthorized(false);
-        setErrorMsg('Invalid URL-encoded admin security key. Verification rejected.');
-      }
-    } catch {
-      setErrorMsg('Failed to reach authentication gateway.');
-      setIsAuthorized(false);
-    } finally {
-      setVerifying(false);
-    }
-  };
-
-  const fetchOfficers = async (key: string) => {
-    setLoadingOfficers(true);
-    try {
-      const res = await fetch(`${apiBase}/auth/admin/officers?admin_key=${encodeURIComponent(key)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setOfficers(data);
-      }
-    } catch {
-      setErrorMsg('Could not load police officer registry.');
-    } finally {
-      setLoadingOfficers(false);
-    }
-  };
+  const [newPassword, setNewPassword] = useState('');
+  const [datasetValidation, setDatasetValidation] = useState<any>(null);
+  const [importResult, setImportResult] = useState<any>(null);
 
   useEffect(() => {
-    if (activeKey) {
-      void verifyToken(activeKey);
+    loadData();
+  }, [activeTab]);
+
+  const loadData = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      if (activeTab === 'dashboard') {
+        const [s, h, ds] = await Promise.all([
+          api.admin.getStats().catch(() => null),
+          api.admin.getHealth().catch(() => null),
+          api.apiRequest<any>('/admin/dataset/summary').catch(() => null)
+        ]);
+        if (s) setStats(s);
+        if (h) setHealth(h);
+        if (ds) setDatasetSummary(ds);
+      } else if (activeTab === 'officers') {
+        const [offs, sts] = await Promise.all([
+          api.admin.listOfficers({ q: officerSearch, status: officerStatusFilter }),
+          api.stations.list()
+        ]);
+        setOfficers(offs);
+        setStations(sts);
+      } else if (activeTab === 'stations') {
+        const sts = await api.stations.list({ q: stationSearch });
+        setStations(sts);
+      } else if (activeTab === 'cases') {
+        const [cs, offs, sts] = await Promise.all([
+          api.admin.listCases({ q: caseSearch }),
+          api.admin.listOfficers(),
+          api.stations.list()
+        ]);
+        setCases(cs);
+        setOfficers(offs);
+        setStations(sts);
+      } else if (activeTab === 'rag') {
+        const [docs, ds] = await Promise.all([
+          api.admin.listRAGDocuments(),
+          api.apiRequest<any>('/admin/dataset/summary').catch(() => null)
+        ]);
+        setRagDocs(docs);
+        if (ds) setDatasetSummary(ds);
+      } else if (activeTab === 'audit-logs') {
+        const logs = await api.admin.listAuditLogs({ action: auditSearch });
+        setAuditLogs(logs);
+      } else if (activeTab === 'health') {
+        const h = await api.admin.getHealth();
+        setHealth(h);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to load data');
+    } finally {
+      setLoading(false);
     }
-  }, []);
-
-  const handleUnlockWithEncoded = () => {
-    setTokenInput(DEFAULT_URL_ENCODED_KEY);
-    void verifyToken(DEFAULT_URL_ENCODED_KEY);
   };
 
-  const handleCustomUnlock = (e: React.FormEvent) => {
-    e.preventDefault();
-    void verifyToken(tokenInput);
-  };
-
+  // --- Officer Actions ---
   const handleCreateOfficer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newBadge || !newName || !newEmail || !newUsername || !newPassword) {
-      alert('Please complete all required fields.');
-      return;
-    }
-
-    setSubmitting(true);
     try {
-      const res = await fetch(`${apiBase}/auth/admin/officers?admin_key=${encodeURIComponent(activeKey)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          badge_number: newBadge.trim(),
-          full_name: newName.trim(),
-          rank: newRank,
-          station_name: newStation,
-          email: newEmail.trim(),
-          username: newUsername.trim(),
-          password: newPassword,
-          role: 'Police Officer'
-        })
+      const station = stations.find((s) => s.id === Number(newOfficerForm.station_id));
+      await api.admin.createOfficer({
+        ...newOfficerForm,
+        station_id: newOfficerForm.station_id ? Number(newOfficerForm.station_id) : undefined,
+        station_name: station ? station.name : undefined
       });
+      setShowCreateOfficerModal(false);
+      setSuccessMsg(`Officer ${newOfficerForm.full_name} created successfully.`);
+      loadData();
+    } catch (err: any) {
+      setError(err.message || 'Failed to create officer');
+    }
+  };
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || 'Could not register officer.');
+  const handleToggleOfficerStatus = async (officer: User) => {
+    try {
+      if (officer.is_active) {
+        await api.admin.deactivateOfficer(officer.id);
+        setSuccessMsg(`Officer ${officer.username} deactivated.`);
+      } else {
+        await api.admin.activateOfficer(officer.id);
+        setSuccessMsg(`Officer ${officer.username} activated.`);
       }
+      loadData();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
 
-      onNotice(`Police Officer ${newName} (Badge: ${newBadge}) successfully registered in PostgreSQL.`);
-      // Reset form
-      setNewBadge('');
-      setNewName('');
-      setNewEmail('');
-      setNewUsername('');
-      fetchOfficers(activeKey);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Registration failed');
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!showResetPwModal) return;
+    try {
+      await api.admin.resetOfficerPassword(showResetPwModal.id, newPassword);
+      setShowResetPwModal(null);
+      setNewPassword('');
+      setSuccessMsg(`Password reset for ${showResetPwModal.username}.`);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  // --- Station Actions ---
+  const handleCreateStation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.stations.create(newStationForm as any);
+      setShowCreateStationModal(false);
+      setSuccessMsg(`Station ${newStationForm.name} registered.`);
+      loadData();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleToggleStationStatus = async (station: PoliceStation) => {
+    try {
+      if (station.status === 'ACTIVE') {
+        await api.stations.deactivate(station.id);
+      } else {
+        await api.stations.activate(station.id);
+      }
+      loadData();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  // --- Case Assignment Actions ---
+  const handleAssignOfficer = async (caseId: number, officerId: number, stationId?: number) => {
+    try {
+      await api.admin.assignCaseOfficer(caseId, officerId, stationId);
+      setShowAssignOfficerModal(null);
+      setSuccessMsg('Case assigned successfully.');
+      loadData();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  // --- Dataset Actions ---
+  const handleValidateDataset = async () => {
+    try {
+      setLoading(true);
+      const res = await api.apiRequest<any>('/admin/dataset/validate', { method: 'POST' });
+      setDatasetValidation(res);
+    } catch (err: any) {
+      setError(err.message);
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
   };
 
-  const handleToggleStatus = async (officerId: number, currentStatus: boolean) => {
+  const handleImportDataset = async () => {
     try {
-      const res = await fetch(`${apiBase}/auth/admin/officers/${officerId}/status?admin_key=${encodeURIComponent(activeKey)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_active: !currentStatus })
-      });
-      if (res.ok) {
-        onNotice(`Officer status updated.`);
-        fetchOfficers(activeKey);
-      }
-    } catch {
-      alert('Failed to update officer status');
+      setLoading(true);
+      setError('');
+      const res = await api.apiRequest<any>('/admin/dataset/import', { method: 'POST' });
+      setImportResult(res);
+      setSuccessMsg(`Successfully imported ${res.successfully_imported} cases from synthetic dataset!`);
+      loadData();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleLockConsole = () => {
-    setIsAuthorized(false);
-    setActiveKey('');
-    localStorage.removeItem('investra_admin_key');
-    onNotice('Administrator Console locked.');
+  const handleRollbackDataset = async () => {
+    if (!window.confirm('Are you sure you want to rollback all synthetic dataset cases?')) return;
+    try {
+      setLoading(true);
+      await api.apiRequest<any>('/admin/dataset/rollback', { method: 'POST' });
+      setSuccessMsg('Synthetic dataset records rolled back successfully.');
+      setImportResult(null);
+      loadData();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // If NOT authorized: Render the URL-Encoding Security Gate
-  if (!isAuthorized) {
-    return (
-      <div className="max-w-4xl mx-auto py-8 px-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl relative overflow-hidden">
-          <div className="absolute -right-12 -top-12 w-48 h-48 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+  const sidebarItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: Activity },
+    { id: 'officers', label: 'Police Officers', icon: Users },
+    { id: 'stations', label: 'Police Stations', icon: Building2 },
+    { id: 'cases', label: 'Case Access & Assignment', icon: FolderKanban },
+    { id: 'rag', label: 'RAG / Dataset Management', icon: Database },
+    { id: 'audit-logs', label: 'Audit Logs', icon: ScrollText },
+    { id: 'health', label: 'System Health', icon: RefreshCw },
+  ];
 
-          <div className="flex items-center space-x-3 mb-4">
-            <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl">
-              <Lock size={28} />
+  return (
+    <div className="admin-portal-wrapper">
+      {/* Sidebar matching Section 10 of PDF */}
+      <aside className="admin-sidebar">
+        <div className="sidebar-brand">
+          <div className="brand-badge admin-theme">
+            <Shield size={18} />
+          </div>
+          <div>
+            <b>INVESTRA</b>
+            <span className="sidebar-sub">SYSTEM CONTROL</span>
+          </div>
+        </div>
+
+        <nav className="sidebar-nav">
+          {sidebarItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                className={`nav-btn ${isActive ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  onNavigate(`/admin/${item.id}`);
+                }}
+              >
+                <Icon size={17} />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="sidebar-user">
+          <div className="user-avatar admin-avatar">AD</div>
+          <div className="user-details">
+            <b>{currentUser.full_name || currentUser.username}</b>
+            <span>Chief Administrator</span>
+          </div>
+          <button className="logout-btn" onClick={onLogout} title="Sign Out">
+            <LogOut size={16} />
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <main className="admin-main">
+        {/* Top Header */}
+        <header className="admin-topbar">
+          <div>
+            <span className="badge badge-admin">ADMINISTRATION PORTAL</span>
+            <h1>{sidebarItems.find((i) => i.id === activeTab)?.label}</h1>
+          </div>
+          <div className="topbar-actions">
+            <button className="btn btn-outline" onClick={loadData} title="Refresh Data">
+              <RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh
+            </button>
+          </div>
+        </header>
+
+        {error && (
+          <div className="alert alert-danger">
+            <AlertTriangle size={18} />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="alert alert-success">
+            <CheckCircle2 size={18} />
+            <span>{successMsg}</span>
+          </div>
+        )}
+
+        {/* --- TAB 1: DASHBOARD --- */}
+        {activeTab === 'dashboard' && stats && (
+          <div className="tab-pane">
+            <div className="stats-grid">
+              <div className="stat-card">
+                <span className="stat-label">Total Police Officers</span>
+                <div className="stat-value">{stats.total_police_officers}</div>
+                <div className="stat-meta text-success">{stats.active_officers} Active · {stats.inactive_officers} Inactive</div>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">Police Stations</span>
+                <div className="stat-value">{stats.total_stations}</div>
+                <div className="stat-meta text-primary">{stats.active_stations} Active Precincts</div>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">Total Cases (FIRs)</span>
+                <div className="stat-value">{stats.total_cases}</div>
+                <div className="stat-meta text-warning">{stats.open_cases} Open · {stats.closed_cases} Closed</div>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">Dataset & RAG Status</span>
+                <div className="stat-value">{datasetSummary?.is_imported ? '15 Cases' : '0 Cases'}</div>
+                <div className="stat-meta">
+                  {datasetSummary?.is_imported ? '✓ Synthetic Crime Dataset Imported' : 'Dataset not imported yet'}
+                </div>
+              </div>
             </div>
-            <div>
-              <span className="text-xs font-mono uppercase tracking-widest text-red-400 font-bold">Access Restricted</span>
-              <h2 className="text-2xl font-bold text-white">Administrator Gateway (Protected by URL Encoding)</h2>
+
+            {/* Quick Actions & Dataset Status Banner */}
+            <div className="card dashboard-banner" style={{ marginTop: '20px', padding: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h3>Synthetic Crime Dataset Management (Kolkata)</h3>
+                  <p className="text-muted">
+                    {datasetSummary?.is_imported
+                      ? `Dataset is live in database with ${datasetSummary.imported_cases_count} cases, ${datasetSummary.entities_count} entities, and ${datasetSummary.evidence_records_count} evidence records.`
+                      : 'Load the 15 synthetic Kolkata crime records with full suspects, witnesses, evidence descriptions, and timeline events.'}
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  {!datasetSummary?.is_imported ? (
+                    <button className="btn btn-primary" onClick={handleImportDataset} disabled={loading}>
+                      <UploadCloud size={16} /> Import Dataset Now
+                    </button>
+                  ) : (
+                    <button className="btn btn-outline" onClick={handleRollbackDataset} disabled={loading}>
+                      <Trash2 size={16} /> Rollback Dataset
+                    </button>
+                  )}
+                  <button className="btn btn-secondary" onClick={() => setActiveTab('rag')}>
+                    Manage RAG / Dataset →
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Recent System Activity */}
+            <div className="card" style={{ marginTop: '20px' }}>
+              <div className="card-header">
+                <h3>Recent System Activity Audit</h3>
+                <span className="badge badge-secondary">{stats.recent_system_activity.length} recent logs</span>
+              </div>
+              <div className="table-responsive">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Action</th>
+                      <th>Actor</th>
+                      <th>Detail</th>
+                      <th>Result</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stats.recent_system_activity.map((log) => (
+                      <tr key={log.id}>
+                        <td className="text-muted">{new Date(log.timestamp).toLocaleTimeString()}</td>
+                        <td><span className="tag tag-action">{log.action}</span></td>
+                        <td><b>{log.actor}</b></td>
+                        <td>{log.detail}</td>
+                        <td>
+                          <span className={`badge badge-${log.result === 'SUCCESS' ? 'success' : 'danger'}`}>
+                            {log.result}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                    {!stats.recent_system_activity.length && (
+                      <tr><td colSpan={5} className="text-center text-muted">No recent activity logs recorded.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
+        )}
 
-          <p className="text-slate-400 text-sm mb-6 leading-relaxed">
-            In accordance with departmental security requirements, the INVESTRA Administrator Console is guarded by URL encoding verification.
-            Only authorized administrators possessing the valid URL-encoded credential token can provision new police officers.
-          </p>
-
-          {errorMsg && (
-            <div className="mb-6 p-4 bg-red-950/40 border border-red-500/40 rounded-xl flex items-center space-x-3 text-red-300 text-sm">
-              <BadgeAlert size={20} className="text-red-400 shrink-0" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
-
-          {/* Interactive URL Encoding Validator & Quick Access Box */}
-          <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-5 mb-6">
-            <div className="flex items-center justify-between mb-3 border-b border-slate-800/80 pb-3">
-              <div className="flex items-center space-x-2 text-xs font-semibold text-blue-400">
-                <Key size={16} />
-                <span>URL ENCODING SECURITY SPECIFICATION</span>
+        {/* --- TAB 2: POLICE OFFICERS --- */}
+        {activeTab === 'officers' && (
+          <div className="tab-pane">
+            <div className="table-toolbar">
+              <div className="search-box">
+                <Search size={16} />
+                <input
+                  type="text"
+                  placeholder="Search officers by name, username, badge ID..."
+                  value={officerSearch}
+                  onChange={(e) => setOfficerSearch(e.target.value)}
+                />
               </div>
-              <span className="text-xs font-mono bg-blue-950/50 text-blue-300 px-2 py-0.5 rounded border border-blue-800/50">
-                RFC 3986 Standard
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-              <div className="bg-slate-900/90 p-3 rounded-lg border border-slate-800">
-                <span className="text-slate-400 block mb-1">Raw Master Admin Passkey:</span>
-                <code className="text-amber-300 font-mono font-bold block select-all">INVESTRA_ADMIN_2026</code>
-              </div>
-              <div className="bg-slate-900/90 p-3 rounded-lg border border-slate-800">
-                <span className="text-slate-400 block mb-1">Protected URL-Encoded Token:</span>
-                <code className="text-emerald-400 font-mono font-bold block break-all select-all">
-                  {DEFAULT_URL_ENCODED_KEY}
-                </code>
+              <div className="toolbar-filters">
+                <select value={officerStatusFilter} onChange={(e) => setOfficerStatusFilter(e.target.value)}>
+                  <option value="">All Statuses</option>
+                  <option value="ACTIVE">ACTIVE</option>
+                  <option value="INACTIVE">INACTIVE</option>
+                </select>
+                <button className="btn btn-primary" onClick={() => setShowCreateOfficerModal(true)}>
+                  <Plus size={16} /> Create Police Officer
+                </button>
               </div>
             </div>
 
-            <div className="mt-4 pt-4 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs text-slate-400">
-                Click below to unlock using the verified URL-encoded credential token:
-              </p>
+            <div className="card">
+              <div className="table-responsive">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Badge ID</th>
+                      <th>Name / Username</th>
+                      <th>Rank</th>
+                      <th>Assigned Station</th>
+                      <th>Contact Email / Phone</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {officers.map((off) => (
+                      <tr key={off.id}>
+                        <td><b>{off.badge_number || `POL-${off.id}`}</b></td>
+                        <td>
+                          <div><b>{off.full_name || off.username}</b></div>
+                          <small className="text-muted">@{off.username}</small>
+                        </td>
+                        <td>{off.rank || 'Investigating Officer'}</td>
+                        <td>{off.station_name || 'Unassigned'}</td>
+                        <td>
+                          <div>{off.email}</div>
+                          {off.phone && <small className="text-muted">{off.phone}</small>}
+                        </td>
+                        <td>
+                          <span className={`badge badge-${off.is_active ? 'success' : 'danger'}`}>
+                            {off.is_active ? 'ACTIVE' : 'DEACTIVATED'}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="action-buttons-cell">
+                            <button
+                              className="btn-icon"
+                              title={off.is_active ? 'Deactivate Account' : 'Activate Account'}
+                              onClick={() => handleToggleOfficerStatus(off)}
+                            >
+                              {off.is_active ? <XCircle size={16} className="text-danger" /> : <CheckCircle2 size={16} className="text-success" />}
+                            </button>
+                            <button
+                              className="btn-icon"
+                              title="Reset Password"
+                              onClick={() => setShowResetPwModal(off)}
+                            >
+                              <KeyRound size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {!officers.length && (
+                      <tr><td colSpan={7} className="text-center text-muted">No officers found matching criteria.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* --- TAB 3: POLICE STATIONS --- */}
+        {activeTab === 'stations' && (
+          <div className="tab-pane">
+            <div className="table-toolbar">
+              <div className="search-box">
+                <Search size={16} />
+                <input
+                  type="text"
+                  placeholder="Search stations by name, code, district..."
+                  value={stationSearch}
+                  onChange={(e) => setStationSearch(e.target.value)}
+                />
+              </div>
+              <button className="btn btn-primary" onClick={() => setShowCreateStationModal(true)}>
+                <Plus size={16} /> Register Police Station
+              </button>
+            </div>
+
+            <div className="card">
+              <div className="table-responsive">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Station Code</th>
+                      <th>Station Name</th>
+                      <th>District</th>
+                      <th>Address</th>
+                      <th>Coordinates</th>
+                      <th>Officers</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stations.map((st) => (
+                      <tr key={st.id}>
+                        <td><b>{st.code}</b></td>
+                        <td><b>{st.name}</b></td>
+                        <td>{st.district}</td>
+                        <td>{st.address}</td>
+                        <td><small>{st.latitude.toFixed(4)}, {st.longitude.toFixed(4)}</small></td>
+                        <td><span className="badge badge-primary">{st.officers_count || 0} Officers</span></td>
+                        <td>
+                          <span className={`badge badge-${st.status === 'ACTIVE' ? 'success' : 'secondary'}`}>
+                            {st.status}
+                          </span>
+                        </td>
+                        <td>
+                          <button
+                            className="btn-icon"
+                            onClick={() => handleToggleStationStatus(st)}
+                            title={st.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
+                          >
+                            {st.status === 'ACTIVE' ? <XCircle size={16} className="text-danger" /> : <CheckCircle2 size={16} className="text-success" />}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* --- TAB 4: CASE ACCESS & ASSIGNMENT --- */}
+        {activeTab === 'cases' && (
+          <div className="tab-pane">
+            <div className="table-toolbar">
+              <div className="search-box">
+                <Search size={16} />
+                <input
+                  type="text"
+                  placeholder="Search all system cases by reference, title, crime type..."
+                  value={caseSearch}
+                  onChange={(e) => setCaseSearch(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="table-responsive">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Case / FIR Number</th>
+                      <th>Title</th>
+                      <th>Category</th>
+                      <th>Station</th>
+                      <th>Assigned Officer</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cases.map((c) => (
+                      <tr key={c.id}>
+                        <td><b>{c.fir_number || c.case_number}</b></td>
+                        <td><b>{c.title}</b></td>
+                        <td>{c.crime_type}</td>
+                        <td>{c.police_station}</td>
+                        <td>{c.assigned_officer || 'Unassigned'}</td>
+                        <td>
+                          <span className={`badge badge-${c.status === 'OPEN' ? 'primary' : c.status === 'CLOSED' ? 'success' : 'warning'}`}>
+                            {c.status}
+                          </span>
+                        </td>
+                        <td>
+                          <button
+                            className="btn btn-sm btn-outline"
+                            onClick={() => setShowAssignOfficerModal(c)}
+                          >
+                            Reassign Officer
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* --- TAB 5: RAG / DATASET MANAGEMENT --- */}
+        {activeTab === 'rag' && (
+          <div className="tab-pane">
+            {/* Dataset Importer Panel matching Sections 2-4 of PDF */}
+            <div className="card" style={{ marginBottom: '20px', padding: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <h2>Kolkata Synthetic Crime Dataset Integration</h2>
+                  <p className="text-muted">
+                    15 records across 22 structured columns (victims, suspects, witnesses, physical evidence descriptions, and chronological timelines).
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button className="btn btn-outline" onClick={handleValidateDataset} disabled={loading}>
+                    <Eye size={16} /> Validate CSV
+                  </button>
+                  {!datasetSummary?.is_imported ? (
+                    <button className="btn btn-primary" onClick={handleImportDataset} disabled={loading}>
+                      <UploadCloud size={16} /> Execute Full Import
+                    </button>
+                  ) : (
+                    <button className="btn btn-danger" onClick={handleRollbackDataset} disabled={loading}>
+                      <Trash2 size={16} /> Rollback Imported Dataset
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Validation Preview Box */}
+              {datasetValidation && (
+                <div className="validation-box" style={{ marginTop: '16px', background: '#f8fafc', padding: '16px', borderRadius: '8px' }}>
+                  <h4>CSV Structure Validation Result: <span className="text-success">✓ VALID</span></h4>
+                  <p>Total Rows: <b>{datasetValidation.total_rows}</b> | Valid: <b>{datasetValidation.valid_rows}</b> | Errors: <b>{datasetValidation.errors.length}</b></p>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                    {datasetValidation.preview.map((p: any) => (
+                      <div key={p.report_number} className="badge badge-secondary">
+                        {p.report_number} · {p.crime_description}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Import Results Box */}
+              {importResult && (
+                <div className="validation-box" style={{ marginTop: '16px', background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '16px', borderRadius: '8px' }}>
+                  <h4 className="text-success">✓ Import Completed Successfully</h4>
+                  <div className="stats-grid" style={{ marginTop: '12px' }}>
+                    <div><b>Cases Created:</b> {importResult.cases_created}</div>
+                    <div><b>Victims:</b> {importResult.victims_created}</div>
+                    <div><b>Suspects:</b> {importResult.suspects_created}</div>
+                    <div><b>Witnesses:</b> {importResult.witnesses_created}</div>
+                    <div><b>Evidence Records:</b> {importResult.evidence_records_created}</div>
+                    <div><b>RAG Embeddings:</b> {importResult.embeddings}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Indexed RAG Documents Table */}
+            <div className="card">
+              <div className="card-header">
+                <h3>Indexed RAG Knowledge Documents & Evidence Chunks</h3>
+                <span className="badge badge-primary">{ragDocs.length} Total Documents</span>
+              </div>
+              <div className="table-responsive">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Document Title</th>
+                      <th>Source Type</th>
+                      <th>SHA-256 Hash</th>
+                      <th>Chunks</th>
+                      <th>Vector Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ragDocs.map((doc) => (
+                      <tr key={doc.id}>
+                        <td><b>{doc.title}</b></td>
+                        <td><span className="tag tag-action">{doc.source_type}</span></td>
+                        <td><code>{doc.document_hash.slice(0, 16)}...</code></td>
+                        <td>{doc.chunks_count} chunks ({doc.embedded_chunks} embedded)</td>
+                        <td>
+                          <span className={`badge badge-${doc.rag_ready ? 'success' : 'warning'}`}>
+                            {doc.rag_ready ? 'RAG READY' : 'INDEXING'}
+                          </span>
+                        </td>
+                        <td>
+                          <button
+                            className="btn btn-sm btn-outline"
+                            onClick={async () => {
+                              try {
+                                await api.admin.reindexRAGDocument(doc.id);
+                                setSuccessMsg(`Document ${doc.id} reindexed.`);
+                                loadData();
+                              } catch (e: any) {
+                                setError(e.message);
+                              }
+                            }}
+                          >
+                            Re-index
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {!ragDocs.length && (
+                      <tr><td colSpan={6} className="text-center text-muted">No RAG documents indexed yet. Import dataset or upload evidence to populate index.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* --- TAB 6: AUDIT LOGS --- */}
+        {activeTab === 'audit-logs' && (
+          <div className="tab-pane">
+            <div className="table-toolbar">
+              <div className="search-box">
+                <Search size={16} />
+                <input
+                  type="text"
+                  placeholder="Filter logs by action name (e.g. LOGIN, CASE_REGISTERED, EVIDENCE_UPLOADED)..."
+                  value={auditSearch}
+                  onChange={(e) => setAuditSearch(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="table-responsive">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Timestamp</th>
+                      <th>User / Actor</th>
+                      <th>Action</th>
+                      <th>Target Resource</th>
+                      <th>Details</th>
+                      <th>IP Address</th>
+                      <th>Result</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {auditLogs.map((log) => (
+                      <tr key={log.id}>
+                        <td className="text-muted">{new Date(log.created_at || log.timestamp || '').toLocaleString()}</td>
+                        <td><b>{log.user || log.actor}</b></td>
+                        <td><span className="tag tag-action">{log.action}</span></td>
+                        <td>{log.resource || (log.case_id ? `Case #${log.case_id}` : 'System')}</td>
+                        <td>{log.detail}</td>
+                        <td><small>{log.ip_address || '127.0.0.1'}</small></td>
+                        <td>
+                          <span className={`badge badge-${log.result === 'SUCCESS' ? 'success' : 'danger'}`}>
+                            {log.result || 'SUCCESS'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* --- TAB 7: SYSTEM HEALTH --- */}
+        {activeTab === 'health' && health && (
+          <div className="tab-pane">
+            <div className="stats-grid">
+              <div className="stat-card">
+                <span className="stat-label">Database Engine</span>
+                <div className="stat-value text-success">{health.database}</div>
+                <div className="stat-meta">{health.details?.database}</div>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">Evidence Storage</span>
+                <div className="stat-value text-success">{health.storage}</div>
+                <div className="stat-meta">{health.details?.storage}</div>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">Ollama AI / LLM Engine</span>
+                <div className={`stat-value text-${health.ollama === 'UP' ? 'success' : 'warning'}`}>
+                  {health.ollama}
+                </div>
+                <div className="stat-meta">{health.details?.ollama}</div>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* --- MODAL: Create Officer --- */}
+      {showCreateOfficerModal && (
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3>Create Police Officer Account</h3>
+              <button className="btn-icon" onClick={() => setShowCreateOfficerModal(false)}><XCircle size={18} /></button>
+            </div>
+            <form onSubmit={handleCreateOfficer}>
+              <div className="modal-body">
+                <div className="form-grid-2">
+                  <div className="form-group">
+                    <label>Full Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={newOfficerForm.full_name}
+                      onChange={(e) => setNewOfficerForm({ ...newOfficerForm, full_name: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Badge Number *</label>
+                    <input
+                      type="text"
+                      required
+                      value={newOfficerForm.badge_number}
+                      onChange={(e) => setNewOfficerForm({ ...newOfficerForm, badge_number: e.target.value })}
+                      placeholder="e.g. POL-1042"
+                    />
+                  </div>
+                </div>
+                <div className="form-grid-2">
+                  <div className="form-group">
+                    <label>Username *</label>
+                    <input
+                      type="text"
+                      required
+                      value={newOfficerForm.username}
+                      onChange={(e) => setNewOfficerForm({ ...newOfficerForm, username: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Email Address *</label>
+                    <input
+                      type="email"
+                      required
+                      value={newOfficerForm.email}
+                      onChange={(e) => setNewOfficerForm({ ...newOfficerForm, email: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="form-grid-2">
+                  <div className="form-group">
+                    <label>Phone Number</label>
+                    <input
+                      type="text"
+                      value={newOfficerForm.phone}
+                      onChange={(e) => setNewOfficerForm({ ...newOfficerForm, phone: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Rank</label>
+                    <select
+                      value={newOfficerForm.rank}
+                      onChange={(e) => setNewOfficerForm({ ...newOfficerForm, rank: e.target.value })}
+                    >
+                      <option>Inspector</option>
+                      <option>Sub-Inspector</option>
+                      <option>Assistant Sub-Inspector</option>
+                      <option>Investigating Officer</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Assigned Police Station *</label>
+                  <select
+                    required
+                    value={newOfficerForm.station_id || ''}
+                    onChange={(e) => setNewOfficerForm({ ...newOfficerForm, station_id: Number(e.target.value) })}
+                  >
+                    <option value="">Select a Police Station</option>
+                    {stations.map((st) => (
+                      <option key={st.id} value={st.id}>{st.name} ({st.code})</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Initial Department Password *</label>
+                  <input
+                    type="password"
+                    required
+                    minLength={12}
+                    value={newOfficerForm.password}
+                    onChange={(e) => setNewOfficerForm({ ...newOfficerForm, password: e.target.value })}
+                    placeholder="Min 12 characters"
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowCreateOfficerModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Create Officer</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL: Create Station --- */}
+      {showCreateStationModal && (
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3>Register Police Station</h3>
+              <button className="btn-icon" onClick={() => setShowCreateStationModal(false)}><XCircle size={18} /></button>
+            </div>
+            <form onSubmit={handleCreateStation}>
+              <div className="modal-body">
+                <div className="form-grid-2">
+                  <div className="form-group">
+                    <label>Station Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={newStationForm.name}
+                      onChange={(e) => setNewStationForm({ ...newStationForm, name: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Station Code *</label>
+                    <input
+                      type="text"
+                      required
+                      value={newStationForm.code}
+                      onChange={(e) => setNewStationForm({ ...newStationForm, code: e.target.value })}
+                      placeholder="e.g. PS-SLC-01"
+                    />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>District *</label>
+                  <input
+                    type="text"
+                    required
+                    value={newStationForm.district}
+                    onChange={(e) => setNewStationForm({ ...newStationForm, district: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Physical Address *</label>
+                  <input
+                    type="text"
+                    required
+                    value={newStationForm.address}
+                    onChange={(e) => setNewStationForm({ ...newStationForm, address: e.target.value })}
+                  />
+                </div>
+                <div className="form-grid-2">
+                  <div className="form-group">
+                    <label>Latitude</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={newStationForm.latitude}
+                      onChange={(e) => setNewStationForm({ ...newStationForm, latitude: parseFloat(e.target.value) })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Longitude</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={newStationForm.longitude}
+                      onChange={(e) => setNewStationForm({ ...newStationForm, longitude: parseFloat(e.target.value) })}
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowCreateStationModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Register Station</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL: Reset Password --- */}
+      {showResetPwModal && (
+        <div className="modal-overlay">
+          <div className="modal-card modal-sm">
+            <div className="modal-header">
+              <h3>Reset Password: {showResetPwModal.username}</h3>
+              <button className="btn-icon" onClick={() => setShowResetPwModal(null)}><XCircle size={18} /></button>
+            </div>
+            <form onSubmit={handleResetPassword}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label>New Secure Password *</label>
+                  <input
+                    type="password"
+                    required
+                    minLength={12}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Min 12 characters"
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowResetPwModal(null)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Update Password</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL: Reassign Case Officer --- */}
+      {showAssignOfficerModal && (
+        <div className="modal-overlay">
+          <div className="modal-card modal-sm">
+            <div className="modal-header">
+              <h3>Assign Investigating Officer</h3>
+              <button className="btn-icon" onClick={() => setShowAssignOfficerModal(null)}><XCircle size={18} /></button>
+            </div>
+            <div className="modal-body">
+              <p>Case: <b>{showAssignOfficerModal.fir_number || showAssignOfficerModal.case_number}</b></p>
+              <div className="form-group">
+                <label>Select Investigating Officer</label>
+                <select id="reassign-officer-select">
+                  {officers.filter((o) => o.is_active).map((off) => (
+                    <option key={off.id} value={off.id}>{off.full_name || off.username} ({off.badge_number}) — {off.station_name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-outline" onClick={() => setShowAssignOfficerModal(null)}>Cancel</button>
               <button
-                onClick={handleUnlockWithEncoded}
-                disabled={verifying}
-                className="bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs px-4 py-2 rounded-lg flex items-center space-x-2 transition shadow-lg shadow-blue-600/20"
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  const sel = (document.getElementById('reassign-officer-select') as HTMLSelectElement).value;
+                  handleAssignOfficer(showAssignOfficerModal.id, Number(sel));
+                }}
               >
-                <Unlock size={14} />
-                <span>{verifying ? 'Verifying...' : 'Unlock via URL-Encoded Key'}</span>
+                Save Assignment
               </button>
             </div>
           </div>
-
-          {/* Manual Input Form */}
-          <form onSubmit={handleCustomUnlock} className="flex flex-col sm:flex-row gap-3">
-            <input
-              type="text"
-              placeholder="Paste custom URL-encoded key (e.g. %49%4e%56...)"
-              value={tokenInput}
-              onChange={(e) => setTokenInput(e.target.value)}
-              className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 font-mono"
-            />
-            <button
-              type="submit"
-              disabled={verifying || !tokenInput.trim()}
-              className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-6 py-2.5 rounded-lg text-sm font-semibold transition flex items-center justify-center space-x-2"
-            >
-              {verifying && <RefreshCw size={14} className="animate-spin" />}
-              <span>Verify &amp; Authorize</span>
-            </button>
-          </form>
         </div>
-      </div>
-    );
-  }
-
-  // If Authorized: Render the Full Administrator Management Console
-  return (
-    <div className="max-w-7xl mx-auto py-6 space-y-8">
-      {/* Header Banner */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-2 text-xs font-mono text-emerald-400 mb-1">
-            <CheckCircle size={14} />
-            <span>AUTHENTICATED VIA URL ENCODING</span>
-          </div>
-          <h1 className="text-2xl font-bold text-white">Administrator Portal · Police Officer Provisioning</h1>
-          <p className="text-slate-400 text-sm mt-1">
-            Authorized administrator console for adding and managing police officers with access to INVESTRA cases.
-          </p>
-        </div>
-
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={() => fetchOfficers(activeKey)}
-            className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium transition flex items-center space-x-1"
-            title="Refresh Roster"
-          >
-            <RefreshCw size={14} className={loadingOfficers ? 'animate-spin' : ''} />
-            <span>Sync DB</span>
-          </button>
-          <button
-            onClick={handleLockConsole}
-            className="px-3.5 py-2 bg-red-950/40 hover:bg-red-900/60 border border-red-500/30 text-red-300 rounded-lg text-xs font-semibold transition flex items-center space-x-1.5"
-          >
-            <Lock size={14} />
-            <span>Lock Console</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left Column: Register New Police Officer */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl h-fit">
-          <div className="flex items-center space-x-2.5 mb-5 border-b border-slate-800 pb-4">
-            <UserPlus size={20} className="text-blue-400" />
-            <h2 className="text-lg font-bold text-white">Provision New Officer</h2>
-          </div>
-
-          <form onSubmit={handleCreateOfficer} className="space-y-4 text-xs">
-            <div>
-              <label className="block text-slate-400 font-semibold mb-1">Police Badge Number *</label>
-              <input
-                type="text"
-                placeholder="e.g. WB-IPS-5102"
-                value={newBadge}
-                onChange={(e) => setNewBadge(e.target.value)}
-                required
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-400 font-semibold mb-1">Full Officer Name *</label>
-              <input
-                type="text"
-                placeholder="e.g. Inspector Debanjan Sen"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                required
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-slate-400 font-semibold mb-1">Rank *</label>
-                <select
-                  value={newRank}
-                  onChange={(e) => setNewRank(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-white focus:border-blue-500 focus:outline-none"
-                >
-                  <option value="Inspector of Police">Inspector</option>
-                  <option value="Sub-Inspector">Sub-Inspector</option>
-                  <option value="Assistant Sub-Inspector">ASI</option>
-                  <option value="Deputy Superintendent">DSP</option>
-                  <option value="Station In-Charge">Station In-Charge</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-slate-400 font-semibold mb-1">Station Jurisdiction *</label>
-                <select
-                  value={newStation}
-                  onChange={(e) => setNewStation(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-white focus:border-blue-500 focus:outline-none"
-                >
-                  <option value="Salt Lake Police Station">Salt Lake PS</option>
-                  <option value="Bidhannagar East Police Station">Bidhannagar East PS</option>
-                  <option value="Electronics Complex Police Station">Electronics Complex PS</option>
-                  <option value="New Town Police Station">New Town PS</option>
-                  <option value="Lake Town Police Station">Lake Town PS</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-slate-400 font-semibold mb-1">Official Email Address *</label>
-              <input
-                type="email"
-                placeholder="officer.name@investra.gov.in"
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                required
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-slate-400 font-semibold mb-1">Portal Username *</label>
-                <input
-                  type="text"
-                  placeholder="e.g. debanjan"
-                  value={newUsername}
-                  onChange={(e) => setNewUsername(e.target.value)}
-                  required
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono focus:border-blue-500 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-slate-400 font-semibold mb-1">Initial Password *</label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  required
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono focus:border-blue-500 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full mt-4 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2.5 rounded-lg transition shadow-lg shadow-blue-600/25 flex items-center justify-center space-x-2"
-            >
-              {submitting ? <RefreshCw size={15} className="animate-spin" /> : <UserPlus size={15} />}
-              <span>Save &amp; Authorize Officer</span>
-            </button>
-          </form>
-        </div>
-
-        {/* Right Column: Active Police Officers Directory in PostgreSQL */}
-        <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-          <div className="flex items-center justify-between mb-5 border-b border-slate-800 pb-4">
-            <div className="flex items-center space-x-2.5">
-              <Users size={20} className="text-emerald-400" />
-              <h2 className="text-lg font-bold text-white">Authorized Police Officers Roster (PostgreSQL)</h2>
-            </div>
-            <span className="text-xs bg-slate-800 text-slate-300 px-3 py-1 rounded-full font-mono">
-              {officers.length} Registered
-            </span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-semibold">
-                <tr>
-                  <th className="pb-3">Badge &amp; Name</th>
-                  <th className="pb-3">Rank &amp; Station</th>
-                  <th className="pb-3">Contact</th>
-                  <th className="pb-3">Role</th>
-                  <th className="pb-3">Status</th>
-                  <th className="pb-3 text-right">Access</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {officers.map((officer) => (
-                  <tr key={officer.id} className="hover:bg-slate-800/30 transition">
-                    <td className="py-3">
-                      <strong className="text-white block font-medium">
-                        {officer.full_name || officer.username}
-                      </strong>
-                      <span className="text-slate-400 font-mono text-[11px]">
-                        {officer.badge_number || `ID-${officer.id}`}
-                      </span>
-                    </td>
-                    <td className="py-3">
-                      <span className="text-slate-200 block">{officer.rank || 'Investigator'}</span>
-                      <span className="text-slate-400 text-[11px]">{officer.station_name || 'Precinct HQ'}</span>
-                    </td>
-                    <td className="py-3 text-slate-300 font-mono text-[11px]">
-                      {officer.email}
-                    </td>
-                    <td className="py-3">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                        officer.role === 'Administrator' ? 'bg-purple-950 text-purple-300 border border-purple-800/40' : 'bg-blue-950 text-blue-300 border border-blue-800/40'
-                      }`}>
-                        {officer.role}
-                      </span>
-                    </td>
-                    <td className="py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                        officer.is_active ? 'bg-emerald-950 text-emerald-300 border border-emerald-800/40' : 'bg-red-950 text-red-300 border border-red-800/40'
-                      }`}>
-                        {officer.is_active ? 'Active' : 'Suspended'}
-                      </span>
-                    </td>
-                    <td className="py-3 text-right">
-                      {officer.role !== 'Administrator' && (
-                        <button
-                          onClick={() => handleToggleStatus(officer.id, officer.is_active)}
-                          className={`text-[11px] font-medium px-2.5 py-1 rounded transition border ${
-                            officer.is_active
-                              ? 'bg-red-950/40 hover:bg-red-900/60 text-red-300 border-red-800/40'
-                              : 'bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border-emerald-800/40'
-                          }`}
-                        >
-                          {officer.is_active ? 'Suspend' : 'Activate'}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
-}
+};

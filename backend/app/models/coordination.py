@@ -52,8 +52,11 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True)
-    case_id = Column(Integer, ForeignKey("cases.id"), index=True, nullable=False)
+    case_id = Column(Integer, ForeignKey("cases.id"), index=True, nullable=True)
     action = Column(String, nullable=False)
     detail = Column(Text, nullable=False)
     actor = Column(String, default="Investigator", nullable=False)
+    actor_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    ip_address = Column(String, nullable=True)
+    result = Column(String, default="SUCCESS", nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

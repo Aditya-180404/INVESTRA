@@ -3,7 +3,7 @@ from typing import List, Dict
 
 def extract_entities(text: str) -> List[Dict]:
     """
-    Mock NER and Rule-based Extraction Service.
+    Deterministic rule-based extraction service for supported evidence text.
     Extracts Persons (capitalized words), Phones, and Vehicles.
     """
     entities = []
