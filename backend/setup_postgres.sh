@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 set -e
 
-PG_BIN="/usr/lib/postgresql/18/bin"
-PGDATA="/home/ghost/Desktop/INVESTRA/backend/pgdata"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PG_BIN="${PG_BIN:-}"
+if [ -z "$PG_BIN" ]; then
+    PG_BIN="$(dirname "$(command -v pg_ctl)")"
+fi
+PGDATA="${PGDATA:-$SCRIPT_DIR/pgdata}"
 LOGFILE="$PGDATA/logfile"
 
 # 1. Initialize cluster if not present

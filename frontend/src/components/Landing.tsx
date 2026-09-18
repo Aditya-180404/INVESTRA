@@ -1,258 +1,91 @@
-import React from 'react';
-import { Shield, Lock, FileText, Network, Clock, Users, Cpu, FileCheck, ArrowRight, ShieldCheck, Database, Layers } from 'lucide-react';
+import React, { useState } from 'react';
+import {
+  Activity, ArrowDown, ArrowRight, BrainCircuit, CheckCircle2, Clock3,
+  Database, FileCheck2, FileText, GitBranch, Layers3, LockKeyhole,
+  MapPin, Network, ScanSearch, Shield, ShieldCheck, Users, Workflow
+} from 'lucide-react';
 
 interface LandingProps {
   onNavigate: (path: string) => void;
+  dashboardPath?: string;
 }
 
-export const Landing: React.FC<LandingProps> = ({ onNavigate }) => {
+const workflowStages = [
+  { key: 'case', label: 'FIR / Case', icon: FileText, description: 'Structured case and FIR information enters the investigation workflow.' },
+  { key: 'evidence', label: 'Evidence', icon: Database, description: 'Evidence and investigation documents are connected to the case.' },
+  { key: 'entities', label: 'Entities', icon: Users, description: 'People, vehicles, phone numbers, locations and other entities are extracted.' },
+  { key: 'relationships', label: 'Relationships', icon: Network, description: 'Related entities and cases can be connected for investigation analysis.' },
+  { key: 'timeline', label: 'Timeline', icon: Clock3, description: 'Investigation events are organized chronologically.' },
+  { key: 'rag', label: 'RAG Search', icon: ScanSearch, description: 'Relevant investigation records are retrieved from the database.' },
+  { key: 'ai', label: 'Local AI', icon: BrainCircuit, description: 'Ollama provides local AI-assisted analysis using retrieved context.' },
+  { key: 'review', label: 'Human Review', icon: ShieldCheck, description: 'Investigators review and validate AI-assisted findings.' },
+  { key: 'report', label: 'Report', icon: FileCheck2, description: 'Structured investigation information can be compiled into a professional report.' },
+];
+
+const features = [
+  ['FIR / Case Management', 'Register, assign, track, and update investigation cases with validated records.', FileText],
+  ['Evidence Management', 'Secure uploads, checksums, document indexing, and controlled access.', Database],
+  ['Entity Intelligence', 'Extract people, vehicles, phones, locations, and case-specific signals.', Users],
+  ['Relationship Analysis', 'Explore connections across entities and cases through an interactive graph.', Network],
+  ['Investigation Timeline', 'Keep operational events and investigative milestones in chronological context.', Clock3],
+  ['Location Intelligence', 'Capture incident locations and coordinate jurisdiction-aware investigations.', MapPin],
+  ['RAG Search', 'Retrieve relevant records and cite the evidence behind every answer.', ScanSearch],
+  ['AI Assistance', 'Use local Ollama models to summarize and reason over retrieved case context.', BrainCircuit],
+  ['Professional Reports', 'Compile reviewable case findings into a formal investigation report.', FileCheck2],
+  ['Admin / Police RBAC', 'Separate administrative controls from officer investigation workflows.', LockKeyhole],
+] as const;
+
+const technologies = ['React', 'FastAPI', 'Python 3.12', 'PostgreSQL', 'pgvector', 'Ollama', 'Docker', 'JWT', 'RAG'];
+
+export const Landing: React.FC<LandingProps> = ({ onNavigate, dashboardPath }) => {
+  const [activeStage, setActiveStage] = useState(0);
+  const stage = workflowStages[activeStage];
+  const ActiveIcon = stage.icon;
+  const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+
   return (
     <div className="landing-page">
-      {/* Navigation Header */}
       <header className="public-nav">
-        <div className="brand" onClick={() => onNavigate('/')}>
-          <div className="brand-badge">
-            <Shield size={20} />
-          </div>
-          <div className="brand-text">
-            <b>INVESTRA</b>
-            <span>POLICE INTELLIGENCE PLATFORM</span>
-          </div>
-        </div>
-        <nav className="nav-links">
-          <a href="#problem">The Problem</a>
-          <a href="#solution">Workflow</a>
-          <a href="#features">Capabilities</a>
-          <a href="#security">Security</a>
+        <button className="brand" onClick={() => scrollTo('home')} aria-label="Go to INVESTRA home">
+          <span className="brand-badge"><Shield size={20} /></span>
+          <span className="brand-text"><b>INVESTRA</b><span>INVESTIGATION INTELLIGENCE</span></span>
+        </button>
+        <nav className="nav-links" aria-label="Public navigation">
+          <a href="#home">Home</a><a href="#how-it-works">How It Works</a><a href="#features">Features</a><a href="#technology">Technology</a><a href="#security">Security</a>
         </nav>
         <div className="auth-buttons">
-          <button className="btn btn-outline" onClick={() => onNavigate('/police/login')}>
-            Police Login
-          </button>
-          <button className="btn btn-primary" onClick={() => onNavigate('/admin/login')}>
-            <Lock size={15} /> Admin Login
-          </button>
+          {dashboardPath && <button className="btn btn-outline" onClick={() => onNavigate(dashboardPath)}>Dashboard</button>}
+          <button className="btn btn-primary" onClick={() => onNavigate('/police/login')}>Login <ArrowRight size={15} /></button>
         </div>
       </header>
 
-      <main className="landing-content">
-        {/* Hero Section */}
-        <section className="hero-section">
-          <div className="hero-badge">
-            <ShieldCheck size={16} /> Official Investigation & Crime Intelligence Workspace
+      <main>
+        <section id="home" className="landing-hero">
+          <div className="hero-copy">
+            <div className="hero-kicker"><Activity size={15} /> CASE INTELLIGENCE, CONNECTED</div>
+            <h1>INVESTRA</h1>
+            <p className="hero-subtitle">AI-Powered Criminal Network Analysis &amp; Investigation Intelligence Platform</p>
+            <p className="hero-description">INVESTRA connects fragmented investigation records, identifies relationships between entities, assists investigators with grounded RAG and local AI, and provides a centralized workflow for accountable case intelligence.</p>
+            <div className="hero-cta"><button className="btn btn-lg btn-primary" onClick={() => dashboardPath ? onNavigate(dashboardPath) : scrollTo('how-it-works')}>Explore Platform <ArrowRight size={17} /></button><button className="btn btn-lg btn-outline" onClick={() => scrollTo('how-it-works')}>How It Works <ArrowDown size={17} /></button></div>
+            <div className="hero-proof"><span><CheckCircle2 size={16} /> Evidence-grounded</span><span><CheckCircle2 size={16} /> Human reviewed</span><span><CheckCircle2 size={16} /> Role protected</span></div>
           </div>
-          <h1 className="hero-title">
-            AI-Powered Investigation<br />
-            <span>Intelligence Platform</span>
-          </h1>
-          <p className="hero-description">
-            INVESTRA unifies First Information Reports (FIRs), multi-source evidence, extracted entities,
-            inter-station coordination, and grounded retrieval-augmented AI into one accountable, auditable workspace
-            for modern law enforcement.
-          </p>
-          <div className="hero-cta">
-            <button className="btn btn-lg btn-police" onClick={() => onNavigate('/police/login')}>
-              <Shield size={18} /> Police Officer Portal <ArrowRight size={18} />
-            </button>
-            <button className="btn btn-lg btn-admin" onClick={() => onNavigate('/admin/login')}>
-              <Lock size={18} /> Administrator Console
-            </button>
-          </div>
+          <div className="hero-visual" aria-label="Investigation intelligence overview"><div className="visual-grid" /><div className="visual-panel visual-panel-main"><span className="panel-label">LIVE CASE MODEL</span><div className="network-orbit"><span className="orbit-node node-center"><ShieldCheck size={25} /></span><span className="orbit-node node-one"><Users size={19} /></span><span className="orbit-node node-two"><MapPin size={19} /></span><span className="orbit-node node-three"><FileText size={19} /></span><i /><i /><i /></div><strong>Connected evidence<br />for clearer decisions</strong></div><div className="visual-panel visual-panel-stat"><span className="panel-label">WORKFLOW STATUS</span><b>09</b><span>stages, one review path</span></div><div className="visual-panel visual-panel-tag">LOCAL AI + RAG</div></div>
         </section>
 
-        {/* Problem Section */}
-        <section id="problem" className="section problem-section">
-          <div className="section-header">
-            <span className="section-tag">THE PROBLEM</span>
-            <h2>The Challenge of Modern Law Enforcement</h2>
-            <p>Traditional investigation methods struggle under mounting data volume and departmental barriers.</p>
-          </div>
-          <div className="problem-grid">
-            <div className="problem-card">
-              <div className="card-icon"><Database size={24} /></div>
-              <h3>Scattered Investigation Information</h3>
-              <p>Case details, statements, and intelligence are fragmented across disparate precinct files, slowing progress.</p>
-            </div>
-            <div className="problem-card">
-              <div className="card-icon"><Lock size={24} /></div>
-              <h3>Evidence Silos</h3>
-              <p>Critical digital documents and forensic files remain locked within isolated folders without cross-referencing.</p>
-            </div>
-            <div className="problem-card">
-              <div className="card-icon"><Users size={24} /></div>
-              <h3>Manual Coordination</h3>
-              <p>Inter-precinct information requests require slow, ad-hoc paperwork that delays hot criminal leads.</p>
-            </div>
-            <div className="problem-card">
-              <div className="card-icon"><Network size={24} /></div>
-              <h3>Difficult Relationship Discovery</h3>
-              <p>Hidden links between suspects, burner phones, getaway vehicles, and addresses are hard to trace manually.</p>
-            </div>
-            <div className="problem-card">
-              <div className="card-icon"><Layers size={24} /></div>
-              <h3>Large Volumes of Documents</h3>
-              <p>Investigators spend days reading hundreds of PDF/Word pages instead of evaluating high-priority leads.</p>
-            </div>
-          </div>
-        </section>
+        <section id="problem" className="intro-band"><div><span className="section-tag">THE INVESTIGATION GAP</span><h2>Good investigators should not have to investigate their own information system.</h2></div><p>Case facts live in reports, files, calls, locations, and station handoffs. INVESTRA brings those signals into one governed workspace so teams can move from fragmented records to a reviewable intelligence picture.</p></section>
 
-        {/* Solution Workflow */}
-        <section id="solution" className="section solution-section">
-          <div className="section-header">
-            <span className="section-tag">THE SOLUTION</span>
-            <h2>Structured End-to-End Investigation Flow</h2>
-            <p>Every case moves systematically from registration to evidence-grounded prosecutorial reporting.</p>
-          </div>
-          <div className="workflow-diagram">
-            <div className="workflow-step">
-              <span className="step-num">01</span>
-              <h4>FIR / Case</h4>
-              <p>Structured 8-step intake & server-validated registration</p>
-            </div>
-            <div className="workflow-arrow">→</div>
-            <div className="workflow-step">
-              <span className="step-num">02</span>
-              <h4>Evidence</h4>
-              <p>Secure storage & SHA-256 cryptographic chain of custody</p>
-            </div>
-            <div className="workflow-arrow">→</div>
-            <div className="workflow-step">
-              <span className="step-num">03</span>
-              <h4>Entity Extraction</h4>
-              <p>Automated discovery of suspects, phones, vehicles & addresses</p>
-            </div>
-            <div className="workflow-arrow">→</div>
-            <div className="workflow-step">
-              <span className="step-num">04</span>
-              <h4>Relationship Analysis</h4>
-              <p>Interactive graph linking people, devices, and scenes</p>
-            </div>
-            <div className="workflow-arrow">→</div>
-            <div className="workflow-step">
-              <span className="step-num">05</span>
-              <h4>AI + RAG</h4>
-              <p>Ollama qwen3.5 retrieval with exact source citations</p>
-            </div>
-            <div className="workflow-arrow">→</div>
-            <div className="workflow-step">
-              <span className="step-num">06</span>
-              <h4>Investigator Review</h4>
-              <p>Human verification, coordination, & final report</p>
-            </div>
-          </div>
-        </section>
+        <section id="how-it-works" className="section workflow-section"><div className="section-heading"><span className="section-tag">THE WORKFLOW</span><h2>How INVESTRA works</h2><p>Move through the complete investigation pipeline. Select any stage to see its role.</p></div><div className="workflow-shell"><div className="workflow-rail" role="list" aria-label="Investigation workflow stages">{workflowStages.map((item, index) => { const Icon = item.icon; return <React.Fragment key={item.key}><button className={`workflow-stage ${activeStage === index ? 'active' : ''}`} onClick={() => setActiveStage(index)} onMouseEnter={() => setActiveStage(index)} role="listitem" aria-label={item.label}><span className="stage-index">0{index + 1}</span><span className="stage-icon"><Icon size={19} /></span><strong>{item.label}</strong></button>{index < workflowStages.length - 1 && <ArrowRight className="workflow-connector" size={20} aria-hidden="true" />}</React.Fragment>; })}</div><div className="workflow-detail"><div className="detail-icon"><ActiveIcon size={28} /></div><div><span className="section-tag">STAGE 0{activeStage + 1} / 09</span><h3>{stage.label}</h3><p>{stage.description}</p></div><div className="detail-progress"><span style={{ width: `${((activeStage + 1) / workflowStages.length) * 100}%` }} /></div></div></div></section>
 
-        {/* Features Section */}
-        <section id="features" className="section features-section">
-          <div className="section-header">
-            <span className="section-tag">CAPABILITIES</span>
-            <h2>Integrated Investigation Suite</h2>
-            <p>Designed strictly around actual operational policing and intelligence needs.</p>
-          </div>
-          <div className="features-grid">
-            <div className="feature-item">
-              <FileText className="f-icon" />
-              <h3>FIR Management</h3>
-              <p>Full lifecycle tracking of First Information Reports with server-side validation against duplicates.</p>
-            </div>
-            <div className="feature-item">
-              <Layers className="f-icon" />
-              <h3>Case Management</h3>
-              <p>Complete workspace with status stages: DRAFT, REGISTERED, OPEN, UNDER_INVESTIGATION, and CLOSED.</p>
-            </div>
-            <div className="feature-item">
-              <Database className="f-icon" />
-              <h3>Evidence Management</h3>
-              <p>Upload, download, tamper-proof SHA-256 verification, and chunked vector embedding indexing.</p>
-            </div>
-            <div className="feature-item">
-              <Network className="f-icon" />
-              <h3>Investigation Graph</h3>
-              <p>Visual relationship network showing connections between suspects, phones, vehicles, and locations.</p>
-            </div>
-            <div className="feature-item">
-              <Clock className="f-icon" />
-              <h3>Timeline Analysis</h3>
-              <p>Chronological feed cleanly distinguishing real investigation events from automated system activities.</p>
-            </div>
-            <div className="feature-item">
-              <Users className="f-icon" />
-              <h3>Inter-Station Coordination</h3>
-              <p>Jurisdiction-based assistance requests, response tracking, and mutual intelligence sharing.</p>
-            </div>
-            <div className="feature-item">
-              <Cpu className="f-icon" />
-              <h3>AI/RAG Assistant</h3>
-              <p>Evidence-grounded question answering powered by local Ollama LLMs with strict source citations.</p>
-            </div>
-            <div className="feature-item">
-              <FileCheck className="f-icon" />
-              <h3>Investigation Reports</h3>
-              <p>Automated generation of formal police investigation reports ready for senior review and prosecution.</p>
-            </div>
-            <div className="feature-item">
-              <ShieldCheck className="f-icon" />
-              <h3>Secure RBAC</h3>
-              <p>Strict access boundaries: Administrator system control vs. authorized Police Officer investigation operations.</p>
-            </div>
-          </div>
-        </section>
+        <section id="solution" className="section solution-section"><div className="section-heading"><span className="section-tag">THE SOLUTION</span><h2>From information silos to investigation context</h2></div><div className="solution-grid"><article><Layers3 size={22} /><h3>One operational record</h3><p>Cases, evidence, entities, locations, timelines, and reports stay connected from intake through review.</p></article><article><GitBranch size={22} /><h3>Relationships, not just rows</h3><p>Surface links between entities and cases with graph analysis designed for investigative reasoning.</p></article><article><Workflow size={22} /><h3>Assistance with accountability</h3><p>Retrieval and local AI accelerate review while source context and human sign-off remain central.</p></article></div></section>
 
-        {/* Security Section */}
-        <section id="security" className="section security-section">
-          <div className="security-box">
-            <div className="sec-header">
-              <ShieldCheck size={36} />
-              <div>
-                <h2>Enterprise Police Security & Accountability</h2>
-                <p>Engineered to meet statutory compliance, chain of custody integrity, and least privilege standards.</p>
-              </div>
-            </div>
-            <div className="security-points">
-              <div className="sec-point">
-                <b>Role-Based Access</b>
-                <p>Cryptographic JWTs with server-enforced role verification on every API request.</p>
-              </div>
-              <div className="sec-point">
-                <b>Admin-Controlled Accounts</b>
-                <p>Police officers cannot self-register. Accounts are created and activated strictly by administrators.</p>
-              </div>
-              <div className="sec-point">
-                <b>Case Authorization</b>
-                <p>Officers can access only assigned cases and authorized station resources.</p>
-              </div>
-              <div className="sec-point">
-                <b>Evidence Security</b>
-                <p>Controlled file storage, strict size/MIME verification, and immutable SHA-256 checksums.</p>
-              </div>
-              <div className="sec-point">
-                <b>Audit Logs</b>
-                <p>Append-only audit trail recording every login, case edit, upload, download, and report generation.</p>
-              </div>
-              <div className="sec-point">
-                <b>Human-In-The-Loop AI</b>
-                <p>AI assists with retrieval and summarization; human investigators retain final review and sign-off.</p>
-              </div>
-            </div>
-          </div>
-        </section>
+        <section id="features" className="section features-section"><div className="section-heading"><span className="section-tag">PLATFORM CAPABILITIES</span><h2>Every investigation signal, in one workspace</h2></div><div className="features-grid">{features.map(([title, description, Icon]) => <article className="feature-item" key={title}><Icon className="f-icon" size={21} /><h3>{title}</h3><p>{description}</p></article>)}</div></section>
+
+        <section id="technology" className="section technology-section"><div className="technology-copy"><span className="section-tag">BUILT FOR DEPLOYMENT</span><h2>Practical technology for a governed intelligence workflow.</h2><p>INVESTRA combines a responsive React interface, FastAPI services, PostgreSQL data, vector retrieval, and locally hosted models. Containerized services keep the project portable from development to deployment.</p></div><div className="technology-list">{technologies.map((technology, index) => <span key={technology} style={{ '--delay': `${index * 45}ms` } as React.CSSProperties}>{technology}</span>)}</div></section>
+
+        <section id="security" className="section security-section"><div className="security-box"><div className="security-heading"><ShieldCheck size={34} /><div><span className="section-tag">TRUST &amp; CONTROL</span><h2>Designed for accountable investigation</h2></div></div><div className="security-points"><div><b>JWT authentication</b><p>Authenticated sessions protect access to operational data.</p></div><div><b>Role-based access control</b><p>Backend authorization separates administrator and officer capabilities.</p></div><div><b>Human-in-the-loop</b><p>Investigators validate AI-assisted findings before action.</p></div><div><b>Synthetic demo data</b><p>Demonstration workflows use controlled synthetic records.</p></div></div><div className="responsible-ai"><LockKeyhole size={18} /><p><strong>Responsible AI:</strong> INVESTRA assists investigators with retrieval and analysis. It does not independently determine guilt, arrest, or legal outcomes.</p></div></div></section>
       </main>
 
-      {/* Footer */}
-      <footer className="public-footer">
-        <div className="footer-content">
-          <div className="footer-brand">
-            <Shield size={18} /> <b>INVESTRA</b> · Investigation Intelligence Platform
-          </div>
-          <div className="footer-links">
-            <button onClick={() => onNavigate('/police/login')} className="link-btn">Police Portal</button>
-            <button onClick={() => onNavigate('/admin/login')} className="link-btn">Admin Portal</button>
-          </div>
-          <div className="footer-copy">
-            © 2026 INVESTRA. Restricted to authorized law enforcement personnel.
-          </div>
-        </div>
-      </footer>
+      <footer className="public-footer"><div className="footer-brand"><Shield size={17} /> <b>INVESTRA</b><span>Investigation intelligence, connected.</span></div><div className="footer-links"><button onClick={() => onNavigate('/police/login')}>Police Login</button><button onClick={() => onNavigate('/admin/login')}>Admin Login</button></div><span className="footer-copy">Authorized investigation workspace</span></footer>
     </div>
   );
 };

@@ -86,3 +86,5 @@ logs/
 
 # Local environment overrides
 .envrc
+
+backend/test-evidence-storage/

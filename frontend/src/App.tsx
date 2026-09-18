@@ -85,7 +85,7 @@ export default function App() {
 
   // 1. Public Landing Page
   if (currentPath === '/') {
-    return <Landing onNavigate={navigate} />;
+    return <Landing onNavigate={navigate} dashboardPath={currentUser ? (currentUser.role === 'Administrator' ? '/admin/dashboard' : '/police/dashboard') : undefined} />;
   }
 
   // 2. Auth Routes

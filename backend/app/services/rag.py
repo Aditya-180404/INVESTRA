@@ -1,7 +1,6 @@
 """Local Ollama-backed retrieval augmented generation with grounded citations."""
 import json
 import math
-import hashlib
 from typing import Any, Optional
 import httpx
 from sqlalchemy.orm import Session
@@ -17,28 +16,17 @@ def chunks(text: str, size: int = 900, overlap: int = 120) -> list[str]:
     return [text[i:i + size] for i in range(0, len(text), max(1, size - overlap)) if text[i:i + size]]
 
 
-def _pseudo_embedding(text: str) -> list[float]:
-    """Deterministic normalized embedding vector for fallback when offline."""
-    raw = [((int(hashlib.md5(f"{text}_{i}".encode()).hexdigest(), 16) % 1000) / 1000.0) - 0.5 for i in range(128)]
-    norm = math.sqrt(sum(x*x for x in raw)) or 1.0
-    return [x / norm for x in raw]
-
-
 def embedding(text: str) -> list[float]:
-    try:
-        response = httpx.post(
-            f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/embed",
-            json={"model": settings.OLLAMA_EMBEDDING_MODEL, "input": text},
-            timeout=10.0
-        )
-        if response.status_code == 200:
-            values = response.json().get("embeddings")
-            if values and values[0]:
-                return values[0]
-    except Exception:
-        pass
-    # Fallback pseudo embedding
-    return _pseudo_embedding(text)
+    response = httpx.post(
+        f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/embed",
+        json={"model": settings.OLLAMA_EMBEDDING_MODEL, "input": text},
+        timeout=10.0
+    )
+    response.raise_for_status()
+    values = response.json().get("embeddings")
+    if not values or not values[0]:
+        raise RuntimeError("Embedding service returned no vector")
+    return values[0]
 
 
 def index_evidence(db: Session, evidence: Evidence) -> None:
@@ -63,7 +51,12 @@ def _similarity(left: list[float], right: list[float]) -> float:
 
 def answer(db: Session, case_id: Optional[int], question: str) -> dict[str, Any]:
     question_clean = question.strip()
-    q_emb = embedding(question_clean)
+    embedding_available = True
+    try:
+        q_emb = embedding(question_clean)
+    except Exception:
+        embedding_available = False
+        q_emb = []
 
     # If case_id is provided (> 0), filter by that case; otherwise cross-case search
     if case_id and case_id > 0:
@@ -87,7 +80,7 @@ def answer(db: Session, case_id: Optional[int], question: str) -> dict[str, Any]
             continue
         try:
             chunk_emb = json.loads(chunk.embedding_json)
-            sim = _similarity(q_emb, chunk_emb)
+            sim = _similarity(q_emb, chunk_emb) if embedding_available else 0.0
             
             # Simple keyword matching boost
             c_text_lower = chunk.content.lower()
@@ -119,6 +112,7 @@ def answer(db: Session, case_id: Optional[int], question: str) -> dict[str, Any]
     )
 
     model_answer = ""
+    model_available = True
     try:
         response = httpx.post(
             f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/generate",
@@ -127,19 +121,21 @@ def answer(db: Session, case_id: Optional[int], question: str) -> dict[str, Any]
         )
         if response.status_code == 200:
             model_answer = response.json().get("response", "").strip()
+        else:
+            model_available = False
     except Exception:
-        # Grounded extraction fallback from top chunk
-        model_answer = ""
+        model_available = False
 
     if not model_answer:
-        # Grounded direct synthesis from top matching chunks
         top_chunk = top_ranked[0][0]
-        case_rec = db.get(Case, top_chunk.case_id) if top_chunk.case_id else None
-        case_label = f"Case {case_rec.case_number}" if case_rec else f"Case #{top_chunk.case_id}"
-        model_answer = (
-            f"Based on retrieved investigation records for {case_label} [S1]:\n"
-            f"{top_chunk.content[:400]}..."
-        )
+        if not model_available:
+            model_answer = (
+                "AI service is currently unavailable. The following is verbatim retrieved "
+                "investigation record context and is not an AI-generated conclusion:\n\n"
+                f"[S1] {top_chunk.content}"
+            )
+        else:
+            raise RuntimeError("AI model returned an empty response")
 
     sources = []
     for i, (chunk, score, _) in enumerate(top_ranked):
@@ -170,5 +166,6 @@ def answer(db: Session, case_id: Optional[int], question: str) -> dict[str, Any]
     return {
         "answer": model_answer,
         "sources": sources,
-        "warning": "AI-generated analysis. Human review is required."
+        "warning": ("AI service unavailable; showing retrieved records only. Human review is required."
+                     if not model_available else "AI-generated analysis. Human review is required.")
     }

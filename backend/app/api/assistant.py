@@ -29,6 +29,9 @@ def ask_assistant(request: QueryRequest, db: Session = Depends(get_db), user: Us
         result = answer(db, request.case_id, user_query)
     except Exception as exc:
         raise HTTPException(status_code=503, detail="AI service unavailable. Core investigation functions remain available.") from exc
+
+    if not result.get("answer", "").strip():
+        raise HTTPException(status_code=503, detail="AI service returned no answer. Please verify Ollama and the indexed evidence.")
     
     audit(db, action="AI_ANALYSIS", actor=user, case_id=request.case_id if request.case_id and request.case_id > 0 else None,
           detail=f"RAG query: {user_query[:100]}")

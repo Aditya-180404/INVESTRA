@@ -1,4 +1,5 @@
 import json
+import fitz
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -250,6 +251,18 @@ def test_fir_creation_and_investigation_workspace():
     assert report["case_number"] == "CASE-2026-WB-099"
     assert "Rohan Sen" in report["suspects"]
     assert report["verification_status"] == "AUTHENTICATED BY INVESTIGATOR"
+
+    pdf_res = client.get(f"/api/cases/{case_id}/report.pdf", headers=h)
+    assert pdf_res.status_code == 200
+    assert pdf_res.headers["content-type"] == "application/pdf"
+    assert pdf_res.content.startswith(b"%PDF-")
+    pdf_text = fitz.open(stream=pdf_res.content, filetype="pdf")
+    assert pdf_text.page_count >= 1
+    extracted_pdf_text = "\n".join(page.get_text() for page in pdf_text)
+    assert "INVESTIGATION INTELLIGENCE REPORT" in extracted_pdf_text
+    assert "Rohan Sen" in extracted_pdf_text
+    assert "Page 1 of" in extracted_pdf_text
+    pdf_text.close()
 
     # 7. Check Admin Stats
     admin_token = client.post("/api/auth/admin/login", json={"username": "admin_user", "password": "AdminSecurePassword123!"}).json()["access_token"]

@@ -38,6 +38,7 @@ services:
     restart: unless-stopped
     volumes:
       - evidence_data:/app/storage/evidence
+      - ./data:/data:ro
 
   frontend:
     build:

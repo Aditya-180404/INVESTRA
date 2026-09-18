@@ -1,9 +1,11 @@
 import json
 import math
+import uuid
+import fitz
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -697,7 +699,7 @@ def generate_investigation_report(case_id: int, db: Session = Depends(get_db), u
         "case_number": db_case.case_number,
         "fir_number": db_case.fir_number or db_case.case_number,
         "fir_date": db_case.fir_date or db_case.created_at,
-        "station": db_case.police_station or "Salt Lake Police Station",
+        "station": db_case.police_station or "Not recorded",
         "investigating_officer": assigned_officer.full_name or assigned_officer.username if assigned_officer else db_case.created_by_officer,
         "investigating_officer_badge": assigned_officer.badge_number if assigned_officer else "N/A",
         "case_title": db_case.title,
@@ -705,8 +707,8 @@ def generate_investigation_report(case_id: int, db: Session = Depends(get_db), u
         "status": db_case.status,
         "priority": db_case.priority,
         "incident_date": db_case.incident_date,
-        "incident_location": db_case.incident_location,
-        "incident_description": db_case.description,
+        "incident_location": db_case.incident_location or "Not recorded",
+        "incident_description": db_case.description or "No incident description recorded.",
         "complainant": {
             "name": db_case.complainant_name or "Confidential / Unrecorded",
             "contact": db_case.complainant_contact or "N/A",
@@ -717,12 +719,14 @@ def generate_investigation_report(case_id: int, db: Session = Depends(get_db), u
         "witnesses": witnesses,
         "victims": victims,
         "entities_count": len(entities),
-        "entities_summary": [{"type": e.entity_type, "value": e.value, "role": e.role} for e in entities[:20]],
+        "entities_summary": [{"id": e.id, "type": e.entity_type, "value": e.value, "role": e.role, "confidence": e.confidence_score} for e in entities],
         "evidence_files": [
             {
                 "id": ev.id,
-                "name": ev.original_filename or ev.title,
-                "type": ev.source_type,
+                "name": ev.original_filename or ev.title or "Untitled evidence",
+                "type": ev.evidence_type or ev.source_type or "Not recorded",
+                "source": ev.source_type or "Not recorded",
+                "uploaded_at": ev.uploaded_at,
                 "sha256": ev.document_hash,
                 "status": ev.processing_status
             }
@@ -737,6 +741,16 @@ def generate_investigation_report(case_id: int, db: Session = Depends(get_db), u
             }
             for req in coord_reqs
         ],
+        "relationships": [
+            {
+                "source": next((e.value for e in entities if e.id == rel.source_entity_id), f"Entity #{rel.source_entity_id}"),
+                "target": next((e.value for e in entities if e.id == rel.target_entity_id), f"Entity #{rel.target_entity_id}"),
+                "type": rel.relationship_type,
+                "confidence": rel.confidence,
+                "verification": rel.verification_status,
+            }
+            for rel in relationships
+        ],
         "verification_status": "AUTHENTICATED BY INVESTIGATOR",
         "confidentiality_notice": "CONFIDENTIAL LAW ENFORCEMENT RECORD - INVESTRA INTELLIGENCE PLATFORM"
     }
@@ -744,3 +758,149 @@ def generate_investigation_report(case_id: int, db: Session = Depends(get_db), u
     audit(db, action="REPORT_GENERATED", actor=user, case_id=case_id, detail=f"Generated report for {db_case.case_number}")
     db.commit()
     return report_data
+
+
+@router.get("/{case_id}/report.pdf")
+def generate_investigation_report_pdf(case_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Render the authenticated case report as a real, paginated PDF document."""
+    db_case = db.query(Case).filter(Case.id == case_id).first()
+    if not db_case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    require_case_access(case_id, db, user)
+
+    evidence_items = db.query(Evidence).filter(Evidence.case_id == case_id).order_by(Evidence.id).all()
+    entities = db.query(Entity).filter(Entity.case_id == case_id).order_by(Entity.id).all()
+    relationships = db.query(Relationship).filter(Relationship.case_id == case_id).order_by(Relationship.id).all()
+    timeline_items = db.query(TimelineEvent).filter(TimelineEvent.case_id == case_id).order_by(TimelineEvent.event_date, TimelineEvent.id).all()
+    assigned_officer = db.get(User, db_case.assigned_officer_id) if db_case.assigned_officer_id else None
+    officer_name = assigned_officer.full_name or assigned_officer.username if assigned_officer else db_case.created_by_officer or "Unassigned"
+    generated_at = datetime.now(timezone.utc)
+    report_id = f"INV-{db_case.id}-{uuid.uuid4().hex[:8].upper()}"
+
+    document = fitz.open()
+    page = None
+    y = 0
+    margin = 54
+    page_width = 595
+    page_height = 842
+
+    def new_page():
+        nonlocal page, y
+        page = document.new_page(width=page_width, height=page_height)
+        y = 54
+        page.draw_rect(fitz.Rect(0, 0, page_width, 48), color=(0.06, 0.25, 0.28), fill=(0.06, 0.25, 0.28))
+        page.insert_text((margin, 30), "INVESTRA", fontsize=17, fontname="hebo", color=(1, 1, 1))
+        page.insert_text((page_width - 185, 29), "CONFIDENTIAL RECORD", fontsize=8, fontname="hebo", color=(0.85, 0.95, 0.94))
+        y = 72
+
+    def ensure_space(height=30):
+        nonlocal y
+        if y + height > page_height - 52:
+            new_page()
+
+    def text(value, size=9, bold=False, color=(0.12, 0.16, 0.22), width=485, gap=4):
+        nonlocal y
+        value = str(value or "N/A")
+        font = "hebo" if bold else "helv"
+        for line in value.splitlines() or ["N/A"]:
+            words = line.split()
+            current = ""
+            for word in words or [""]:
+                candidate = f"{current} {word}".strip()
+                if current and fitz.get_text_length(candidate, fontname=font, fontsize=size) > width:
+                    ensure_space(size + gap)
+                    page.insert_text((margin, y), current, fontsize=size, fontname=font, color=color)
+                    y += size + gap
+                    current = word
+                else:
+                    current = candidate
+            ensure_space(size + gap)
+            page.insert_text((margin, y), current, fontsize=size, fontname=font, color=color)
+            y += size + gap
+
+    def heading(title):
+        nonlocal y
+        ensure_space(34)
+        y += 8
+        page.draw_rect(fitz.Rect(margin, y - 13, page_width - margin, y + 8), color=(0.12, 0.23, 0.48), fill=(0.9, 0.94, 1))
+        text(title.upper(), 10, True, (0.08, 0.18, 0.38), gap=3)
+        y += 6
+
+    def footer(current_page, total_pages):
+        page.draw_line((margin, page_height - 38), (page_width - margin, page_height - 38), color=(0.65, 0.7, 0.78))
+        page.insert_text((margin, page_height - 24), f"Generated by INVESTRA | {generated_at.isoformat()}", fontsize=7, color=(0.35, 0.4, 0.48))
+        page.insert_text((page_width - 115, page_height - 24), f"Page {current_page} of {total_pages}", fontsize=7, color=(0.35, 0.4, 0.48))
+
+    new_page()
+    page.insert_text((margin, y), "INVESTIGATION INTELLIGENCE REPORT", fontsize=19, fontname="hebo", color=(0.06, 0.25, 0.28))
+    y += 22
+    text("Authoritative case records assembled by INVESTRA. AI-assisted material, where present, requires officer verification.", 9, color=(0.35, 0.4, 0.48))
+    text(f"Report ID: {report_id} | Case: {db_case.case_number} | FIR: {db_case.fir_number or 'Not recorded'}", 9, True, gap=3)
+    y += 8
+    heading("FIR Information")
+    for label, value in [
+        ("FIR Number", db_case.fir_number or db_case.case_number), ("Case Number", db_case.case_number),
+        ("Police Station", db_case.police_station or "Not recorded"), ("FIR Date", db_case.fir_date or "Not recorded"),
+        ("Investigating Officer", officer_name), ("Status / Priority", f"{db_case.status or 'Not recorded'} / {db_case.priority or 'Not recorded'}"),
+        ("Crime Classification", db_case.crime_type or "Not recorded"), ("Report Generated", generated_at)
+    ]:
+        text(f"{label}: {value}", 9, gap=3)
+
+    heading("Complainant / Victim")
+    text(f"Name: {db_case.complainant_name or 'Not recorded'} | Contact: {db_case.complainant_contact or 'N/A'}", 9)
+    text(f"Address: {db_case.complainant_address or 'N/A'}", 9)
+    text(f"Statement: {db_case.complainant_statement or 'No statement recorded.'}", 9)
+
+    heading("Incident Details")
+    text(f"Title: {db_case.title}", 9, True)
+    text(f"Date / Time: {db_case.incident_date or 'N/A'} / {db_case.incident_time or 'N/A'}", 9)
+    text(f"Location: {db_case.incident_location or 'N/A'} | District: {db_case.district or 'N/A'}", 9)
+    text(f"Coordinates: Latitude {db_case.latitude if db_case.latitude is not None else 'N/A'} | Longitude {db_case.longitude if db_case.longitude is not None else 'N/A'}", 9)
+    text(db_case.description or "No incident description recorded.", 9)
+
+    heading("Persons and Entities")
+    if entities:
+        for entity in entities:
+            text(f"{entity.value} | Type: {entity.entity_type} | Role: {entity.role or 'Not recorded'} | Confidence: {entity.confidence_score if entity.confidence_score is not None else 'Not recorded'}", 9, gap=3)
+    else:
+        text("No entities recorded.", 9)
+
+    heading("Evidence Inventory")
+    if evidence_items:
+        for evidence in evidence_items:
+            text(f"Evidence #{evidence.id} | {evidence.evidence_type or evidence.source_type or 'Not recorded'} | {evidence.original_filename or evidence.title or 'Untitled'} | Source: {evidence.source_type or 'Not recorded'} | Status: {evidence.processing_status or 'Not recorded'}", 8, gap=3)
+            text(f"SHA-256: {evidence.document_hash or 'Not recorded'} | Collected: {evidence.uploaded_at or 'Not recorded'}", 8, gap=3)
+    else:
+        text("No evidence records attached.", 9)
+
+    heading("Investigation Timeline")
+    if timeline_items:
+        for event in timeline_items:
+            text(f"{event.event_date or 'Date pending'} | {event.event_type} | {event.event_title} | Source: {event.source or 'Not recorded'}", 8, True, gap=3)
+            text(event.description or "No description recorded.", 8, gap=3)
+    else:
+        text("No explicit timeline events recorded.", 9)
+
+    heading("Entity / Relationship Summary")
+    if relationships:
+        entity_map = {entity.id: entity.value for entity in entities}
+        for relationship in relationships:
+            source = entity_map.get(relationship.source_entity_id, f"Entity #{relationship.source_entity_id}")
+            target = entity_map.get(relationship.target_entity_id, f"Entity #{relationship.target_entity_id}")
+            text(f"{source}  --[{relationship.relationship_type}]-->  {target} | Confidence: {relationship.confidence if relationship.confidence is not None else 'Not recorded'} | Verification: {relationship.verification_status or 'Not recorded'}", 8, gap=3)
+    else:
+        text("No relationships recorded. No relationship has been inferred for this report.", 9)
+
+    heading("Certification")
+    text("AI-Assisted Analysis: This report contains no AI conclusion unless explicitly recorded in the case data. Any AI-generated interpretation in INVESTRA requires human verification and is not presented as verified fact.", 9)
+    text(f"Generated by: {user.full_name or user.username} | Report ID: {report_id} | Classification: CONFIDENTIAL", 9)
+
+    for index, pdf_page in enumerate(document, start=1):
+        page = pdf_page
+        footer(index, len(document))
+
+    content = document.tobytes(garbage=4, deflate=True)
+    document.close()
+    audit(db, action="REPORT_PDF_GENERATED", actor=user, case_id=case_id, detail=f"Generated PDF report for {db_case.case_number}")
+    db.commit()
+    return Response(content=content, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{db_case.fir_number or db_case.case_number}-report.pdf"'})

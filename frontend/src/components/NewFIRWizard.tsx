@@ -15,6 +15,7 @@ export const NewFIRWizard: React.FC<NewFIRWizardProps> = ({ onNavigate }) => {
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [stations, setStations] = useState<PoliceStation[]>([]);
 
   // Step 1: FIR Information
@@ -45,6 +46,8 @@ export const NewFIRWizard: React.FC<NewFIRWizardProps> = ({ onNavigate }) => {
   const [district, setDistrict] = useState('Bidhannagar');
   const [latitude, setLatitude] = useState(22.5731);
   const [longitude, setLongitude] = useState(88.4332);
+  const [geocoding, setGeocoding] = useState(false);
+  const [geocodeStatus, setGeocodeStatus] = useState<'resolved' | 'failed' | 'idle'>('resolved');
 
   // Step 5: Entities
   const [entities, setEntities] = useState<{
@@ -79,6 +82,80 @@ export const NewFIRWizard: React.FC<NewFIRWizardProps> = ({ onNavigate }) => {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (step !== 4) return;
+    if (!address.trim()) {
+      setGeocodeStatus('failed');
+      return;
+    }
+
+    const controller = new AbortController();
+    setGeocoding(true);
+    setGeocodeStatus('idle');
+    const timer = window.setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({
+          q: address.trim(),
+          format: 'jsonv2',
+          limit: '1',
+          countrycodes: 'in'
+        });
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
+          signal: controller.signal,
+          headers: { Accept: 'application/json' }
+        });
+        if (!response.ok) {
+          setGeocodeStatus('failed');
+          return;
+        }
+        const results = await response.json();
+        const result = results[0];
+        if (result) {
+          setLatitude(Number(result.lat));
+          setLongitude(Number(result.lon));
+          setAddress(result.display_name || address.trim());
+          setGeocodeStatus('resolved');
+        } else {
+          setGeocodeStatus('failed');
+        }
+      } catch (error) {
+        if ((error as DOMException).name !== 'AbortError') {
+          console.warn('Address geocoding unavailable', error);
+          setGeocodeStatus('failed');
+        }
+      } finally {
+        setGeocoding(false);
+      }
+    }, 700);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [address, step]);
+
+  const validateStep = (stepToValidate: number) => {
+    const requiredByStep: Record<number, Array<[string, string, string]>> = {
+      1: [[firNumber, 'firNumber', 'FIR reference number'], [caseNumber, 'caseNumber', 'case tracking number'], [selectedStationName, 'station', 'registering police station']],
+      2: [[complainantName, 'complainantName', 'complainant full name']],
+      3: [[caseTitle, 'caseTitle', 'case title'], [incidentDate, 'incidentDate', 'incident date'], [incidentDescription, 'incidentDescription', 'incident description']],
+      4: [[address, 'address', 'crime scene address']]
+    };
+    const missing = (requiredByStep[stepToValidate] || []).find(([value]) => !value.trim());
+    setFieldErrors({});
+    if (missing) {
+      setFieldErrors({ [missing[1]]: `${missing[2]} is required.` });
+      setError(`${missing[2]} is required before continuing.`);
+      return false;
+    }
+    if (stepToValidate === 4 && (geocoding || geocodeStatus !== 'resolved' || !Number.isFinite(latitude) || !Number.isFinite(longitude))) {
+      setError(geocoding ? 'Wait for the address coordinates to finish resolving.' : 'This location could not be resolved. Enter a valid place or use the map.');
+      return false;
+    }
+    setError('');
+    return true;
+  };
 
   const addEntityItem = () => {
     if (!newEntityValue.trim()) return;
@@ -238,6 +315,7 @@ export const NewFIRWizard: React.FC<NewFIRWizardProps> = ({ onNavigate }) => {
                   onChange={(e) => setFirNumber(e.target.value)}
                   placeholder="e.g. FIR-2026-0042"
                 />
+                {fieldErrors.firNumber && <small className="text-danger">{fieldErrors.firNumber}</small>}
                 <small>Official state FIR number (server validates uniqueness).</small>
               </div>
               <div className="form-group">
@@ -249,6 +327,7 @@ export const NewFIRWizard: React.FC<NewFIRWizardProps> = ({ onNavigate }) => {
                   onChange={(e) => setCaseNumber(e.target.value)}
                   placeholder="e.g. CASE-2026-WB-101"
                 />
+                {fieldErrors.caseNumber && <small className="text-danger">{fieldErrors.caseNumber}</small>}
                 <small>Investra case identifier.</small>
               </div>
               <div className="form-group">
@@ -279,6 +358,7 @@ export const NewFIRWizard: React.FC<NewFIRWizardProps> = ({ onNavigate }) => {
                     <option value="">Salt Lake Police Station (Default)</option>
                   )}
                 </select>
+                {fieldErrors.station && <small className="text-danger">{fieldErrors.station}</small>}
               </div>
               <div className="form-group">
                 <label>Primary Crime Category</label>
@@ -320,6 +400,7 @@ export const NewFIRWizard: React.FC<NewFIRWizardProps> = ({ onNavigate }) => {
                   onChange={(e) => setComplainantName(e.target.value)}
                   placeholder="Full name of informant or complainant"
                 />
+                {fieldErrors.complainantName && <small className="text-danger">{fieldErrors.complainantName}</small>}
               </div>
               <div className="form-group">
                 <label>Contact Phone / Email</label>
@@ -366,6 +447,7 @@ export const NewFIRWizard: React.FC<NewFIRWizardProps> = ({ onNavigate }) => {
                 onChange={(e) => setCaseTitle(e.target.value)}
                 placeholder="e.g. Unauthorized ATM Cash Dispense Manipulation at Karunamoyee"
               />
+              {fieldErrors.caseTitle && <small className="text-danger">{fieldErrors.caseTitle}</small>}
             </div>
             <div className="form-grid-2">
               <div className="form-group">
@@ -376,6 +458,7 @@ export const NewFIRWizard: React.FC<NewFIRWizardProps> = ({ onNavigate }) => {
                   value={incidentDate}
                   onChange={(e) => setIncidentDate(e.target.value)}
                 />
+                {fieldErrors.incidentDate && <small className="text-danger">{fieldErrors.incidentDate}</small>}
               </div>
               <div className="form-group">
                 <label>Approximate Time of Occurrence</label>
@@ -395,6 +478,7 @@ export const NewFIRWizard: React.FC<NewFIRWizardProps> = ({ onNavigate }) => {
                 onChange={(e) => setIncidentDescription(e.target.value)}
                 placeholder="Describe sequence of events, modus operandi, physical evidence observed, or immediate actions taken..."
               />
+              {fieldErrors.incidentDescription && <small className="text-danger">{fieldErrors.incidentDescription}</small>}
             </div>
             <div className="form-group">
               <label>Additional Investigative Notes</label>
@@ -420,8 +504,15 @@ export const NewFIRWizard: React.FC<NewFIRWizardProps> = ({ onNavigate }) => {
                   type="text"
                   required
                   value={address}
-                  onChange={(e) => setAddress(e.target.value)}
+                  onChange={(e) => {
+                    setAddress(e.target.value);
+                    setGeocodeStatus('idle');
+                  }}
                 />
+                {geocoding && <small>Finding coordinates for this address...</small>}
+                {!geocoding && geocodeStatus === 'failed' && <small className="text-danger">Location could not be resolved. Try a more specific address.</small>}
+                {!geocoding && geocodeStatus === 'resolved' && <small>Coordinates resolved: {latitude.toFixed(6)}, {longitude.toFixed(6)}</small>}
+                {fieldErrors.address && <small className="text-danger">{fieldErrors.address}</small>}
               </div>
               <div className="form-group">
                 <label>Police District</label>
@@ -687,7 +778,9 @@ export const NewFIRWizard: React.FC<NewFIRWizardProps> = ({ onNavigate }) => {
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={() => setStep(step + 1)}
+                onClick={() => {
+                  if (validateStep(step)) setStep(step + 1);
+                }}
               >
                 Continue <ArrowRight size={16} />
               </button>

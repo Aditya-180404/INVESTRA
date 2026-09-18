@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
@@ -9,10 +9,10 @@ class EntityInCase(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
 class CaseBase(BaseModel):
-    case_number: str
+    case_number: str = Field(..., min_length=3, max_length=80)
     fir_number: Optional[str] = None
     fir_date: Optional[datetime] = None
-    title: str
+    title: str = Field(..., min_length=3, max_length=160)
     crime_type: Optional[str] = "Financial Fraud"
     description: Optional[str] = ""
     incident_date: Optional[datetime] = None
@@ -33,6 +33,23 @@ class CaseBase(BaseModel):
 
 class CaseCreate(CaseBase):
     entities: Optional[List[EntityInCase]] = []
+
+    @model_validator(mode="after")
+    def validate_fir_payload(self):
+        # The wizard identifies a formal FIR with fir_number. Formal FIRs
+        # require the same fields that the intake UI marks with an asterisk.
+        if self.fir_number:
+            required = {
+                "complainant_name": self.complainant_name,
+                "description": self.description,
+                "incident_location": self.incident_location,
+                "latitude": self.latitude,
+                "longitude": self.longitude,
+            }
+            missing = [name for name, value in required.items() if value is None or (isinstance(value, str) and not value.strip())]
+            if missing:
+                raise ValueError(f"Required FIR fields missing: {', '.join(missing)}")
+        return self
 
 class CaseUpdate(BaseModel):
     title: Optional[str] = None

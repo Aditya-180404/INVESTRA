@@ -34,6 +34,16 @@ export const InteractiveMapPicker: React.FC<InteractiveMapPickerProps> = ({
   const markerInstanceRef = useRef<any>(null);
 
   useEffect(() => {
+    setLat(initialLat);
+    setLng(initialLng);
+    setAddress(initialAddress);
+    if (mapInstanceRef.current && markerInstanceRef.current) {
+      mapInstanceRef.current.setView([initialLat, initialLng], 14);
+      markerInstanceRef.current.setLatLng([initialLat, initialLng]);
+    }
+  }, [initialLat, initialLng, initialAddress]);
+
+  useEffect(() => {
     let isMounted = true;
 
     async function initMap() {
@@ -119,6 +129,7 @@ export const InteractiveMapPicker: React.FC<InteractiveMapPickerProps> = ({
   };
 
   const handleManualCoordChange = (newLat: number, newLng: number) => {
+    if (!Number.isFinite(newLat) || !Number.isFinite(newLng)) return;
     setLat(newLat);
     setLng(newLng);
     if (mapInstanceRef.current && markerInstanceRef.current) {

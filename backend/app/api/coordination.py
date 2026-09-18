@@ -95,6 +95,7 @@ class SelectionUpdate(BaseModel):
 
 class DraftRequest(BaseModel):
     station_ids: List[int] = Field(min_length=1)
+    body: Optional[str] = Field(default=None, min_length=3, max_length=10000)
 
 
 class EvidenceText(BaseModel):
@@ -337,7 +338,7 @@ def create_drafts(case_id: int, payload: DraftRequest, db: Session = Depends(get
             created.append(existing)
             continue
         number = db.query(InformationRequest).count() + 1
-        body = (
+        body = payload.body.strip() if payload.body else (
             f"Official Information Request Regarding Case FIR Reference: {case.case_number}\n\n"
             f"Dear Station In-Charge,\n"
             f"An authorized investigation team is reviewing Case {case.case_number} ({case.title}).\n"

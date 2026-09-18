@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   FileText, Users, Database, Network, Clock, FileCheck,
   Activity, ArrowLeft, Plus, Download, RefreshCw, Send, ShieldCheck,
-  AlertTriangle, CheckCircle2, MapPin, Eye, Upload, Sparkles, Printer
+  AlertTriangle, CheckCircle2, MapPin, Eye, Upload, Sparkles
 } from 'lucide-react';
 import { api } from '../services/api';
 import type { Case, TimelineEvent, GraphData, User } from '../types';
@@ -24,6 +24,10 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ caseId, onNavigate
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], edges: [] });
   const [reportData, setReportData] = useState<any>(null);
+  const [reportDownloading, setReportDownloading] = useState(false);
+  const [reportSuccess, setReportSuccess] = useState('');
+  const [graphSearch, setGraphSearch] = useState('');
+  const [selectedGraphNode, setSelectedGraphNode] = useState<GraphData['nodes'][number] | null>(null);
 
   // Modals & form states
   const [viewEvidenceModal, setViewEvidenceModal] = useState<any | null>(null);
@@ -148,9 +152,19 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ caseId, onNavigate
 
   const handleSendCoordination = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!coordReqBody.trim()) {
+      setError('Specific intelligence or action required is required.');
+      return;
+    }
     try {
-      // Create request through API
-      setCoordSuccess(`Coordination request submitted to ${coordStationName}. Reference code: REQ-2026-${Math.floor(100+Math.random()*900)}`);
+      const workspace = await api.coordination.getWorkspace(caseId);
+      const station = workspace.recommendations?.find((item: any) => item.name === coordStationName);
+      if (!station) {
+        throw new Error('The selected station is not available in this case coordination workspace.');
+      }
+      const result = await api.coordination.sendDraft(caseId, [station.id], coordReqBody.trim());
+      const request = result.requests?.[0];
+      setCoordSuccess(request ? `Draft ${request.code} prepared for investigator approval.` : 'Coordination request draft prepared for investigator approval.');
       setCoordReqBody('');
       loadCaseData();
     } catch (err: any) {
@@ -192,6 +206,25 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ caseId, onNavigate
     }
   };
 
+  const handleDownloadReport = async () => {
+    setReportDownloading(true);
+    setReportSuccess('');
+    try {
+      const blob = await api.cases.downloadReportPdf(caseId);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${c.fir_number || c.case_number}-report.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setReportSuccess('Professional PDF generated and downloaded successfully.');
+    } catch (err: any) {
+      setError(err.message || 'Unable to generate the PDF report.');
+    } finally {
+      setReportDownloading(false);
+    }
+  };
+
   if (loading && !data) {
     return (
       <div className="workspace-loading">
@@ -217,6 +250,7 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ caseId, onNavigate
   const c: Case = data.case;
   const entities: any[] = data.entities || [];
   const evidenceList: any[] = data.evidence || [];
+  const graphNodeLabels = new Map(graphData.nodes.map((node) => [String(node.id), node.label]));
 
   const tabsList = [
     { id: 'overview', label: 'Overview', icon: FileText },
@@ -544,6 +578,7 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ caseId, onNavigate
           <div className="tab-pane-content">
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
               <h3>Investigation Entity & Relationship Graph</h3>
+              <input value={graphSearch} onChange={(e) => setGraphSearch(e.target.value)} placeholder="Search entities..." aria-label="Search entities" />
               <button className="btn btn-primary" onClick={() => setShowAddRelModal(true)}>
                 <Plus size={16} /> Add Relationship Link
               </button>
@@ -551,10 +586,13 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ caseId, onNavigate
 
             <div className="card graph-canvas-container" style={{ minHeight: '420px', padding: '24px', background: '#0f172a', color: '#fff', borderRadius: '12px' }}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', justifyContent: 'center', alignItems: 'center' }}>
-                {graphData.nodes.map((node) => (
+                {graphData.nodes.filter((node) => `${node.type} ${node.role || ''} ${node.label}`.toLowerCase().includes(graphSearch.toLowerCase())).map((node) => (
                   <div
                     key={node.id}
                     className="graph-node-box"
+                    onClick={() => setSelectedGraphNode(node)}
+                    role="button"
+                    tabIndex={0}
                     style={{
                       background: node.type === 'PERSON' ? '#1e293b' : '#334155',
                       border: node.role === 'SUSPECT' ? '2px solid #ef4444' : node.role === 'VICTIM' ? '2px solid #f59e0b' : '2px solid #3b82f6',
@@ -570,14 +608,21 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ caseId, onNavigate
                 ))}
               </div>
 
+              {selectedGraphNode && (
+                <div style={{ marginTop: '16px', padding: '14px', background: '#172554', border: '1px solid #3b82f6', borderRadius: '8px' }}>
+                  <b>{selectedGraphNode.type}: {selectedGraphNode.label}</b>
+                  <div style={{ color: '#cbd5e1', marginTop: '5px' }}>Role: {selectedGraphNode.role || 'OTHER'} · Confidence: {selectedGraphNode.confidence ?? 'N/A'}</div>
+                </div>
+              )}
+
               <div style={{ marginTop: '24px', padding: '16px', background: '#1e293b', borderRadius: '8px' }}>
                 <h4>Active Relationship Connections ({graphData.edges.length})</h4>
                 <div style={{ display: 'grid', gap: '8px', marginTop: '8px' }}>
                   {graphData.edges.map((edge) => (
                     <div key={edge.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#94a3b8' }}>
-                      <span style={{ color: '#60a5fa' }}>Node #{edge.source}</span>
+                      <span style={{ color: '#60a5fa' }}>{graphNodeLabels.get(String(edge.source)) || `Entity #${edge.source}`}</span>
                       <span>——[ <b style={{ color: '#38bdf8' }}>{edge.label}</b> ]——▶</span>
-                      <span style={{ color: '#60a5fa' }}>Node #{edge.target}</span>
+                      <span style={{ color: '#60a5fa' }}>{graphNodeLabels.get(String(edge.target)) || `Entity #${edge.target}`}</span>
                     </div>
                   ))}
                   {!graphData.edges.length && (
@@ -737,13 +782,14 @@ export const CaseWorkspace: React.FC<CaseWorkspaceProps> = ({ caseId, onNavigate
         {/* --- TAB 10: REPORTS --- */}
         {activeTab === 'reports' && reportData && (
           <div className="tab-pane-content">
+            {reportSuccess && <div className="alert alert-success" style={{ marginBottom: '14px' }}><CheckCircle2 size={16} /> <span>{reportSuccess}</span></div>}
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '14px' }}>
-              <button className="btn btn-outline" onClick={() => window.print()}>
-                <Printer size={16} /> Print / Export Official Report
+              <button className="btn btn-outline" onClick={handleDownloadReport} disabled={reportDownloading}>
+                <FileCheck size={16} /> {reportDownloading ? 'Generating Professional PDF...' : 'Generate Professional PDF'}
               </button>
             </div>
 
-            <div className="card official-report-preview">
+            <div className="card official-report-preview report-print-root">
               <div className="report-header">
                 <h2>POLICE INVESTIGATION PROGRESS REPORT</h2>
                 <small>{reportData.confidentiality_notice}</small>
