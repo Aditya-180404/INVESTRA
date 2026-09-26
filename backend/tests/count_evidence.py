@@ -1,7 +1,7 @@
 import csv, json, sys, os
 sys.path.insert(0, os.path.abspath('.'))
 
-csv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'dataset', 'INVESTRA_Kolkata_Synthetic_Crime_Dataset.csv'))
+csv_path = '../data/dataset/INVESTRA_Kolkata_Synthetic_Crime_Dataset.csv'
 with open(csv_path, encoding='utf-8') as f:
     rows = list(csv.DictReader(f))
 

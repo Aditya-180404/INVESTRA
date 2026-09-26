@@ -21,9 +21,7 @@ from app.core.security import hash_password
 
 client = TestClient(app)
 
-DATASET_CSV_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "data", "dataset", "INVESTRA_Kolkata_Synthetic_Crime_Dataset.csv")
-)
+DATASET_CSV_PATH = "../data/dataset/INVESTRA_Kolkata_Synthetic_Crime_Dataset.csv"
 
 def setup_module():
     settings.JWT_SECRET = "test-secret-that-is-long-enough-for-safe-jwt-signing"

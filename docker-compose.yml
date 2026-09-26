@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: always
@@ -38,7 +38,7 @@ services:
     restart: unless-stopped
     volumes:
       - evidence_data:/app/storage/evidence
-      - ./data:/data:ro
+      - ./data/dataset:/app/data/dataset:ro
 
   frontend:
     build:

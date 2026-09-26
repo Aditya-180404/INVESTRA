@@ -78,24 +78,6 @@ export async function apiRequest<T>(endpoint: string, options: RequestInit = {})
   return response.json();
 }
 
-export async function apiBlob(endpoint: string): Promise<Blob> {
-  const token = getToken();
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  });
-  if (!response.ok) {
-    let detail = 'Request failed.';
-    try {
-      const payload = await response.json();
-      detail = payload.detail || detail;
-    } catch {
-      // Keep the generic error for non-JSON responses.
-    }
-    throw new Error(detail);
-  }
-  return response.blob();
-}
-
 export const api = {
   apiRequest,
 
@@ -141,7 +123,6 @@ export const api = {
       }),
     getTimeline: (id: number) => apiRequest<TimelineEvent[]>(`/cases/${id}/timeline`),
     getReport: (id: number) => apiRequest<any>(`/cases/${id}/report`),
-    downloadReportPdf: (id: number) => apiBlob(`/cases/${id}/report.pdf`),
     addEntity: (caseId: number, data: { entity_type: string; value: string; role?: string; metadata?: any }) =>
       apiRequest<any>(`/cases/${caseId}/entities`, {
         method: 'POST',
@@ -279,11 +260,11 @@ export const api = {
   },
 
   coordination: {
-    getWorkspace: (caseId: number) => apiRequest<any>(`/coordination/cases/${caseId}/workspace`),
-    sendDraft: (caseId: number, stationIds: number[], body?: string) =>
-      apiRequest<any>(`/coordination/cases/${caseId}/requests/drafts`, {
+    getRecommendations: (caseId: number) => apiRequest<any>(`/coordination/cases/${caseId}/recommendations`),
+    sendDraft: (caseId: number, stationIds: number[]) =>
+      apiRequest<any>(`/coordination/cases/${caseId}/draft`, {
         method: 'POST',
-        body: JSON.stringify({ station_ids: stationIds, body }),
+        body: JSON.stringify({ station_ids: stationIds }),
       }),
   },
 };
