@@ -1,16 +1,26 @@
 import { useState, useEffect } from 'react';
-import { clearSession, getToken, refreshCurrentUser } from './services/api';
+
+import {
+  clearSession,
+  getToken,
+  refreshCurrentUser,
+} from './services/api';
+
 import type { User } from './types';
-import { Landing } from './components/Landing';
+
+import Landing from './components/Landing';
 import { Login } from './components/Login';
 import { AdminPortal } from './components/AdminPortal';
 import { PolicePortal } from './components/PolicePortal';
 import { NewFIRWizard } from './components/NewFIRWizard';
 import { CaseWorkspace } from './components/CaseWorkspace';
+
 import './App.css';
 
 export default function App() {
-  const [currentPath, setCurrentPath] = useState<string>(window.location.pathname);
+  const [currentPath, setCurrentPath] = useState<string>(
+    window.location.pathname
+  );
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isHydratingSession, setIsHydratingSession] = useState(true);
 
@@ -19,6 +29,7 @@ export default function App() {
 
     const hydrateSession = async () => {
       const token = getToken();
+
       if (!token) {
         if (alive) {
           setCurrentUser(null);
@@ -29,6 +40,7 @@ export default function App() {
 
       try {
         const user = await refreshCurrentUser();
+
         if (alive) {
           setCurrentUser(user);
         }
@@ -49,6 +61,7 @@ export default function App() {
     };
 
     void hydrateSession();
+
     window.addEventListener('popstate', handlePopState);
 
     return () => {
@@ -74,21 +87,38 @@ export default function App() {
     navigate('/');
   };
 
+  /* =========================================================
+     SESSION HYDRATION
+     ========================================================= */
   if (isHydratingSession) {
     return (
-      <div className="loading-screen card" style={{ maxWidth: '420px', margin: '100px auto', padding: '28px', textAlign: 'center' }}>
+      <div
+        className="loading-screen card"
+        style={{
+          maxWidth: '420px',
+          margin: '100px auto',
+          padding: '28px',
+          textAlign: 'center',
+        }}
+      >
         <h3>Loading INVESTRA session…</h3>
-        <p className="text-muted">Validating your authentication token with the backend.</p>
+        <p className="text-muted">
+          Validating your authentication token with the backend.
+        </p>
       </div>
     );
   }
 
-  // 1. Public Landing Page
+  /* =========================================================
+     1. PUBLIC LANDING PAGE
+     ========================================================= */
   if (currentPath === '/') {
-    return <Landing onNavigate={navigate} dashboardPath={currentUser ? (currentUser.role === 'Administrator' ? '/admin/dashboard' : '/police/dashboard') : undefined} />;
+    return <Landing loginUrl="/police/login" />;
   }
 
-  // 2. Auth Routes
+  /* =========================================================
+     2. AUTH ROUTES
+     ========================================================= */
   if (currentPath === '/police/login') {
     return (
       <Login
@@ -109,7 +139,9 @@ export default function App() {
     );
   }
 
-  // If not logged in, redirect to login selection or landing
+  /* =========================================================
+     IF NOT LOGGED IN
+     ========================================================= */
   if (!currentUser) {
     if (currentPath.startsWith('/admin')) {
       return (
@@ -120,6 +152,7 @@ export default function App() {
         />
       );
     }
+
     return (
       <Login
         kind="police"
@@ -131,22 +164,40 @@ export default function App() {
 
   const isAdmin = currentUser.role === 'Administrator';
 
-  // 3. Administrator Routes
+  /* =========================================================
+     3. ADMINISTRATOR ROUTES
+     ========================================================= */
   if (currentPath.startsWith('/admin')) {
     if (!isAdmin) {
-      // Forbidden: Police cannot access /admin/*
       return (
-        <div className="forbidden-screen card" style={{ maxWidth: '500px', margin: '80px auto', padding: '30px', textAlign: 'center' }}>
+        <div
+          className="forbidden-screen card"
+          style={{
+            maxWidth: '500px',
+            margin: '80px auto',
+            padding: '30px',
+            textAlign: 'center',
+          }}
+        >
           <h2>403 — Administrative Role Required</h2>
-          <p className="text-muted">Your police credentials do not permit access to system administration.</p>
-          <button className="btn btn-primary" onClick={() => navigate('/police/dashboard')} style={{ marginTop: '16px' }}>
+          <p className="text-muted">
+            Your police credentials do not permit access to system
+            administration.
+          </p>
+          <button
+            className="btn btn-primary"
+            onClick={() => navigate('/police/dashboard')}
+            style={{ marginTop: '16px' }}
+          >
             Go to Police Dashboard
           </button>
         </div>
       );
     }
 
-    const tab = currentPath.replace('/admin/', '').split('/')[0] || 'dashboard';
+    const tab =
+      currentPath.replace('/admin/', '').split('/')[0] || 'dashboard';
+
     return (
       <AdminPortal
         currentTab={tab}
@@ -157,19 +208,34 @@ export default function App() {
     );
   }
 
-  // 4. Police Officer Routes
+  /* =========================================================
+     4. NEW FIR ROUTE
+     ========================================================= */
   if (currentPath === '/police/cases/new') {
     return (
       <div className="police-layout-wrapper">
         <header className="police-top-navbar">
-          <div className="navbar-brand" onClick={() => navigate('/police/dashboard')}>
-            <div className="brand-badge police-theme">INVESTRA</div>
-            <div className="brand-text"><b>INVESTRA</b><span>CASE INTAKE</span></div>
+          <div
+            className="navbar-brand"
+            onClick={() => navigate('/police/dashboard')}
+          >
+            <div className="brand-badge police-theme">
+              INVESTRA
+            </div>
+            <div className="brand-text">
+              <b>INVESTRA</b>
+              <span>CASE INTAKE</span>
+            </div>
           </div>
-          <button className="btn btn-outline" onClick={() => navigate('/police/dashboard')}>
+
+          <button
+            className="btn btn-outline"
+            onClick={() => navigate('/police/dashboard')}
+          >
             Cancel & Return to Dashboard
           </button>
         </header>
+
         <main className="police-main-container">
           <NewFIRWizard onNavigate={navigate} />
         </main>
@@ -177,10 +243,15 @@ export default function App() {
     );
   }
 
-  // Specific case workspace route: /police/cases/:id
-  const caseMatch = currentPath.match(/^\/police\/cases\/(\d+)/);
+  /* =========================================================
+     5. SPECIFIC CASE WORKSPACE
+        /police/cases/:id
+     ========================================================= */
+  const caseMatch = currentPath.match(/^\/police\/cases\/(\d+)$/);
+
   if (caseMatch) {
     const caseId = parseInt(caseMatch[1], 10);
+
     return (
       <CaseWorkspace
         caseId={caseId}
@@ -190,6 +261,9 @@ export default function App() {
     );
   }
 
+  /* =========================================================
+     6. POLICE CASES LIST
+     ========================================================= */
   if (currentPath === '/police/cases') {
     return (
       <PolicePortal
@@ -201,7 +275,9 @@ export default function App() {
     );
   }
 
-  // Default Police Dashboard
+  /* =========================================================
+     7. DEFAULT POLICE DASHBOARD
+     ========================================================= */
   return (
     <PolicePortal
       currentTab="dashboard"
