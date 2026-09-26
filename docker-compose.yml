@@ -19,7 +19,8 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
@@ -38,7 +39,6 @@ services:
     restart: unless-stopped
     volumes:
       - evidence_data:/app/storage/evidence
-      - ./data/dataset:/app/data/dataset:ro
 
   frontend:
     build:
