@@ -2,10 +2,10 @@ FROM python:3.12-slim
 
 WORKDIR /app
 ENV PYTHONPATH=/app
-COPY backend/requirements.txt ./requirements.txt
+COPY requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
-COPY backend/ ./
-COPY data/dataset/INVESTRA_Kolkata_Synthetic_Crime_Dataset.csv ./data/dataset/INVESTRA_Kolkata_Synthetic_Crime_Dataset.csv
+COPY . ./
+COPY INVESTRA_Kolkata_Synthetic_Crime_Dataset.csv ./data/dataset/INVESTRA_Kolkata_Synthetic_Crime_Dataset.csv
 RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 8000
