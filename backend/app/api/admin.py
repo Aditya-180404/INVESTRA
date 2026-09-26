@@ -301,9 +301,19 @@ def _resolve_dataset_content(payload_path: Optional[str]) -> str:
     """Resolve dataset CSV content from an absolute/relative path or fall back to default."""
     file_path_str = payload_path or "data/dataset/INVESTRA_Kolkata_Synthetic_Crime_Dataset.csv"
     dataset_path = Path(file_path_str)
-    if not dataset_path.is_file():
-        dataset_path = Path(__file__).resolve().parent.parent.parent.parent / file_path_str
-    if not dataset_path.is_file():
+
+    if dataset_path.is_absolute():
+        candidate_paths = [dataset_path]
+    else:
+        module_path = Path(__file__).resolve()
+        candidate_paths = [
+            Path.cwd() / dataset_path,
+            module_path.parents[2] / dataset_path,
+            module_path.parents[3] / dataset_path,
+        ]
+
+    dataset_path = next((path for path in candidate_paths if path.is_file()), None)
+    if dataset_path is None:
         raise HTTPException(status_code=404, detail=f"Dataset CSV not found: {file_path_str}")
     return dataset_path.read_text(encoding="utf-8", errors="replace")
 
